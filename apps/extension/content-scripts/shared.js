@@ -42,9 +42,7 @@
     ],
     nykaa: [
       "div[class*='wishlist']",
-      "div[class*='product-wrapper']",
-      "div[class*='grid']",
-      "#main-content"
+      "main"
     ],
   };
 
@@ -90,11 +88,9 @@
       "div[class*='product-card']"
     ],
     nykaa: [
-      "div.css-152egh6",
       "div[class*='wishlist-card']",
       "div[class*='product-wrapper']",
-      "div[class*='productCard']",
-      "div[class*='css-']"
+      "div[class*='productCard']"
     ],
   };
 
@@ -408,9 +404,92 @@
     return items;
   }
 
+  const WISHLIST_PATHS = {
+    amazon: /\/(?:hz\/wishlist|gp\/registry\/wishlist)/i,
+    flipkart: /\/wishlist(?:\/|$|\?)/i,
+    myntra: /\/wishlist(?:\/|$|\?)/i,
+    ajio: /\/wishlist(?:\/|$|\?)/i,
+    tatacliq: /\/wishlist(?:\/|$|\?)/i,
+    nykaa: /\/wishlist(?:\/|$|\?)/i,
+  };
+
+  function isWishlistPage(platform) {
+    try {
+      const location = new URL(window.location.href);
+      return Boolean(WISHLIST_PATHS[platform]?.test(`${location.pathname}${location.search}`));
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  // Nykaa's generated CSS class names are shared by product grids throughout the
+  // site. Wishlist cards do, however, have a stable "Move to bag" action and a
+  // canonical `/p/<numeric id>` product link. Anchor extraction to both signals so
+  // recommendations, category links, and footer content can never inflate counts.
+  function scrapeNykaaWishlist(globalSeen) {
+    const items = [];
+    const productLinks = Array.from(document.querySelectorAll("a[href*='/p/']")).filter((link) => {
+      try {
+        return /\/p\/\d+\/?$/i.test(new URL(link.href, window.location.href).pathname);
+      } catch (_error) {
+        return false;
+      }
+    });
+
+    for (const link of productLinks) {
+      let card = link.parentElement;
+      let depth = 0;
+      while (card && card !== document.body && depth < 7) {
+        const moveButton = card.querySelector("button[aria-label^='Move to bag'], button[aria-label*='Move to bag']");
+        if (moveButton) break;
+        card = card.parentElement;
+        depth++;
+      }
+      if (!card || card === document.body || isExcludedNode(card)) continue;
+
+      const rawLabel =
+        link.getAttribute("aria-label") ||
+        link.getAttribute("title") ||
+        link.querySelector("img[alt]")?.getAttribute("alt") ||
+        link.textContent || "";
+      const title = cleanTitle(rawLabel.split(/\b(?:regular|discounted) price\b/i)[0]);
+      if (!title || isGarbageTitle(title)) continue;
+
+      const productId = link.href.split("?")[0];
+      if (globalSeen.has(`id:${productId}`)) continue;
+      globalSeen.add(`id:${productId}`);
+
+      const priceText = cleanText(`${card.textContent || ""} ${rawLabel}`);
+      const priceMatches = Array.from(priceText.matchAll(/(?:₹|Rs\.?|INR|\$)\s?([\d,]+(?:\.\d{1,2})?)/gi));
+      const rawPrice = priceMatches.length
+        ? priceMatches[priceMatches.length - 1][1].replace(/,/g, "")
+        : parsePrice(priceText);
+      items.push({
+        platform: "nykaa",
+        title,
+        price: rawPrice ? parseFloat(rawPrice) : 499.0,
+        category: "",
+        url: productId,
+        platform_product_id: productId,
+        raw_payload: {
+          platform: "nykaa",
+          extracted_from: window.location.href,
+          text: cleanText(card.textContent || "").slice(0, 500),
+        },
+      });
+    }
+    return items;
+  }
+
   function scrapeWishlistItems(platform) {
+    if (!isWishlistPage(platform)) return [];
+
     const globalSeen = new Set();
     let items = [];
+
+    if (platform === "nykaa") {
+      return scrapeNykaaWishlist(globalSeen);
+    }
 
     // Step 1: Find primary wishlist container if present on the page
     const containerSelectors = PLATFORM_CONTAINERS[platform] || [];
@@ -423,6 +502,10 @@
       }
     }
 
+    // Never scrape the entire storefront. If a provider's wishlist container is
+    // not recognized, return no items instead of importing unrelated products.
+    if (!rootContainer && platform !== "myntra") return [];
+
     const searchContext = rootContainer || document;
     const itemSelectors = PLATFORM_ITEM_SELECTORS[platform] || ["article", "li", "div"];
 
@@ -431,22 +514,6 @@
       const nodes = Array.from(searchContext.querySelectorAll(selector));
       const extracted = extractCandidatesFromNodes(nodes, platform, globalSeen);
       items = items.concat(extracted);
-    }
-
-    // Step 3: Fallback if no items were found with primary selectors
-    if (items.length === 0) {
-      const fallbackSelectors = ["li[id^='item']", "div[class*='item']", "div[class*='wishlist']", "div[class*='card']", "article"];
-      for (const selector of fallbackSelectors) {
-        const nodes = Array.from(document.querySelectorAll(selector));
-        const extracted = extractCandidatesFromNodes(nodes, platform, globalSeen);
-        items = items.concat(extracted);
-        if (items.length > 0) break;
-      }
-    }
-
-    // Step 4: Universal price-anchored DOM traversal fallback
-    if (items.length === 0) {
-      items = scrapePriceAnchoredFallback(platform, globalSeen);
     }
 
     // Myntra migrated its wishlist card markup but keeps stable numeric product URLs.
