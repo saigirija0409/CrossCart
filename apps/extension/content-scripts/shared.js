@@ -188,7 +188,7 @@
     text = text.replace(/\bflat\s*\d{1,2}%\s*off\b/gi, "");
     text = text.replace(/\bsave\s+(?:₹|Rs\.?|INR|\$)?\s?[\d,]+\b/gi, "");
     text = text.replace(/\bmrp\s*:?\s*(?:₹|Rs\.?|INR|\$)?\s?[\d,]+\b/gi, "");
-    text = text.replace(/\b(move to bag|add to bag|move to cart|select size|remove|done)\b/gi, "");
+    text = text.replace(/\b(move to bag|add to bag|move to cart|select size|remove|done|show similar)\b/gi, "");
     text = text.replace(/\b(assured|sponsored|free delivery|in stock|out of stock)\b/gi, "");
     text = text.replace(/\s+/g, " ").trim();
     return text;
@@ -199,7 +199,9 @@
     const clean = cleanText(value);
     const symbolMatch = clean.match(/(?:₹|Rs\.?|INR|\$)\s?[\d,]+(?:\.\d{1,2})?/i);
     if (symbolMatch) {
-      return symbolMatch[0].replace(/[^\d.]/g, "");
+      return symbolMatch[0]
+        .replace(/(?:₹|Rs\.?|INR|\$)\s*/i, "")
+        .replace(/,/g, "");
     }
     const numberMatch = clean.match(/[\d,]+(?:\.\d{1,2})?/);
     if (numberMatch) {
@@ -354,6 +356,58 @@
     return items;
   }
 
+  // Myntra's current wishlist uses numeric product URLs (for example `/36427710`)
+  // and does not consistently expose the older itemcard CSS class names. Find those
+  // product links, then use the smallest price-containing ancestor as the card.
+  function scrapeMyntraProductLinkFallback(globalSeen) {
+    const items = [];
+    const productLinks = Array.from(document.querySelectorAll("a[href]")).filter((link) => {
+      try {
+        return /^\/\d+\/?$/.test(new URL(link.href, window.location.href).pathname);
+      } catch (_error) {
+        return false;
+      }
+    });
+
+    for (const link of productLinks) {
+      if (link.closest("header, nav, footer, .desktop-footer, [class*='footer']")) continue;
+
+      let card = link.parentElement;
+      let depth = 0;
+      while (card && card !== document.body && depth < 6) {
+        const text = cleanText(card.textContent || "");
+        if (PRICE_PATTERN.test(text) && text.length >= 15 && text.length <= 1200) break;
+        card = card.parentElement;
+        depth++;
+      }
+      if (!card || card === document.body) continue;
+
+      const title = cleanTitle(card.textContent || "");
+      if (!title || isGarbageTitle(title)) continue;
+
+      const titleKey = title.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (globalSeen.has(titleKey)) continue;
+      globalSeen.add(titleKey);
+      globalSeen.add(`id:${link.href}`);
+
+      const rawPrice = parsePrice(card.textContent || "");
+      items.push({
+        platform: "myntra",
+        title,
+        price: rawPrice ? parseFloat(rawPrice) : 499.0,
+        category: "",
+        url: link.href,
+        platform_product_id: link.href,
+        raw_payload: {
+          platform: "myntra",
+          extracted_from: window.location.href,
+          text: cleanText(card.textContent || "").slice(0, 500),
+        },
+      });
+    }
+    return items;
+  }
+
   function scrapeWishlistItems(platform) {
     const globalSeen = new Set();
     let items = [];
@@ -393,6 +447,11 @@
     // Step 4: Universal price-anchored DOM traversal fallback
     if (items.length === 0) {
       items = scrapePriceAnchoredFallback(platform, globalSeen);
+    }
+
+    // Myntra migrated its wishlist card markup but keeps stable numeric product URLs.
+    if (items.length === 0 && platform === "myntra") {
+      items = scrapeMyntraProductLinkFallback(globalSeen);
     }
 
     return items;
