@@ -45,9 +45,11 @@ database server, no API keys.
 ./scripts/run.sh --fresh    # delete the local database and rebuild from scratch
 ```
 
-First run takes 2–4 minutes: `igraph` and `leidenalg` compile, and the backend
-generates its catalog and synthetic user graph before serving. Later runs start
-in seconds.
+First run takes a couple of minutes — pip and npm pull their dependencies, and
+the backend generates its 1500-product catalog and 80-user similarity graph
+before it starts serving. Later runs come up in seconds. On platforms without
+prebuilt `igraph`/`leidenalg` wheels, pip compiles them, which adds a few
+minutes more.
 
 <details>
 <summary>Windows (PowerShell)</summary>
