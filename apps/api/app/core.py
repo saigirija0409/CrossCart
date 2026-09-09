@@ -601,6 +601,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             auth_token text,
             connected_at text not null,
             last_synced_at text,
+            sync_confirmed_at text,
             unique(user_id, platform)
         );
 
@@ -745,6 +746,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             """
         )
         conn.execute("PRAGMA foreign_keys = ON")
+    connection_columns = {row["name"] for row in conn.execute("pragma table_info(platform_connections)").fetchall()}
+    if "sync_confirmed_at" not in connection_columns:
+        conn.execute("alter table platform_connections add column sync_confirmed_at text")
     cleanup_non_products(conn)
 
 

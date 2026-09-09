@@ -53,8 +53,10 @@ async function postSync(platform, items, tokenOverride = null) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SCRAPE_RESULT") {
-    postSync(message.platform, message.items).then(sendResponse);
-    return true;
+    // Content scripts announce page readiness on load. Syncing here would import
+    // every open shopping tab without an explicit user click.
+    sendResponse({ ok: true, ignored: true });
+    return;
   }
   if (message?.type === "SCRAPE_EMPTY") {
     sendResponse({ ok: false, error: `No wishlist items found on ${message.platform}.` });

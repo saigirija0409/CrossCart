@@ -47,9 +47,15 @@ def test_platform_connection_migration_preserves_existing_connections() -> None:
 
     ensure_schema(conn)
     conn.execute(
-        "insert into platform_connections values (?, ?, 'tatacliq', null, ?, ?)",
+        "insert into platform_connections (connection_id, user_id, platform, auth_token, connected_at, last_synced_at) values (?, ?, 'tatacliq', null, ?, ?)",
         (new_id(), user_id, iso_now(), iso_now()),
     )
 
     platforms = [row[0] for row in conn.execute("select platform from platform_connections order by platform")]
     assert platforms == ["amazon", "tatacliq"]
+
+
+def test_connection_migration_adds_confirmation_marker() -> None:
+    conn = make_conn()
+    columns = {row["name"] for row in conn.execute("pragma table_info(platform_connections)").fetchall()}
+    assert "sync_confirmed_at" in columns

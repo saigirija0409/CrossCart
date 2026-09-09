@@ -278,24 +278,24 @@ def onboarding_preferences(payload: CategoryPreferencesRequest, user=Depends(req
 
 @app.post("/api/platforms/connect")
 def connect_platform(payload: PlatformConnectRequest, user=Depends(require_user), conn=Depends(db)) -> dict[str, Any]:
-    existing = fetch_one(conn, "select * from platform_connections where user_id = ? and platform = ?", (user["user_id"], payload.platform))
+    # Opening setup instructions must never make a store look connected. A
+    # connection is created only by a successful extension sync below.
+    return {"platform": payload.platform, "status": "ready_to_sync"}
+
+
+def ensure_platform_connection(conn, user_id: str, platform: str) -> str:
+    existing = fetch_one(conn, "select * from platform_connections where user_id = ? and platform = ?", (user_id, platform))
     if existing:
-        conn.execute(
-            "update platform_connections set auth_token = ?, last_synced_at = ? where connection_id = ?",
-            (payload.auth_token, iso_now(), existing["connection_id"]),
-        )
-        connection_id = existing["connection_id"]
-    else:
-        connection_id = new_id()
-        conn.execute(
-            """
-            insert into platform_connections (connection_id, user_id, platform, auth_token, connected_at, last_synced_at)
-            values (?, ?, ?, ?, ?, ?)
-            """,
-            (connection_id, user["user_id"], payload.platform, payload.auth_token, iso_now(), iso_now()),
-        )
-    conn.commit()
-    return {"connection_id": connection_id, "platform": payload.platform}
+        return existing["connection_id"]
+    connection_id = new_id()
+    conn.execute(
+        """
+        insert into platform_connections (connection_id, user_id, platform, auth_token, connected_at, last_synced_at, sync_confirmed_at)
+        values (?, ?, ?, null, ?, null, null)
+        """,
+        (connection_id, user_id, platform, iso_now()),
+    )
+    return connection_id
 
 
 @app.get("/api/platforms")
@@ -305,7 +305,7 @@ def list_platforms(user=Depends(require_user), conn=Depends(db)) -> dict[str, An
         """
         select connection_id, platform, connected_at, last_synced_at
         from platform_connections
-        where user_id = ?
+        where user_id = ? and sync_confirmed_at is not null
         order by connected_at desc
         """,
         (user["user_id"],),
@@ -326,7 +326,15 @@ def sync_wishlist(payload: dict[str, Any], user=Depends(require_user), conn=Depe
     items = payload.get("items") or []
     if not isinstance(items, list):
         raise HTTPException(status_code=400, detail="items must be a list")
-    result = add_raw_items(conn, user["user_id"], platform, items)
+    if not items:
+        raise HTTPException(status_code=400, detail="no wishlist items were found")
+    connection_id = ensure_platform_connection(conn, user["user_id"], platform)
+    result = add_raw_items(conn, user["user_id"], platform, items, connection_id=connection_id)
+    now = iso_now()
+    conn.execute(
+        "update platform_connections set last_synced_at = ?, sync_confirmed_at = ? where connection_id = ?",
+        (now, now, connection_id),
+    )
     conn.commit()
     return result
 

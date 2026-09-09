@@ -342,18 +342,7 @@ function App() {
       ]
     };
 
-    try {
-      await api.connectPlatform(token, platformKey);
-      setMessage(`Connected ${platformInfo.name}. Follow popup instructions to sync items.`);
-      await loadDashboard();
-    } catch (err) {
-      console.error("Connect platform call error:", err);
-    }
-
-    // Redirect user to the platform's shopping page in a new window/tab
-    window.open(platformInfo.url, "_blank", "noopener,noreferrer");
-
-    // Display interactive popup modal with step-by-step connection guide
+    setMessage(`Open your ${platformInfo.name} wishlist, then sync it with the extension.`);
     setConnectModalPlatform(platformInfo);
   }
 
@@ -598,12 +587,12 @@ function App() {
                       </div>
                       <p className="muted">
                         {connection
-                          ? `${syncedCount} item(s) currently synced from ${details.name}. Click below to reopen store or view steps.`
-                          : `Click connect to open ${details.name} and view extension sync steps.`}
+                          ? `${syncedCount} item(s) currently synced from ${details.name}.`
+                          : `Open your ${details.name} wishlist, then use the extension to sync it.`}
                       </p>
                       <div className="button-row compact">
                         <button className="primary" onClick={() => void handleConnectPlatform(platformKey)}>
-                          {connection ? "Open Store / Steps" : "Connect"}
+                          {connection ? "View sync steps" : "How to sync"}
                         </button>
                         {connection && (
                           <button className="ghost" onClick={() => handleDisconnectClick(connection.connection_id, platformKey)}>
