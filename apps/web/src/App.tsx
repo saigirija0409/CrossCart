@@ -746,7 +746,9 @@ function App() {
                           </div>
                         </div>
                         <div className="right">
-                          <strong style={{ fontSize: "1.1rem", color: "#e7ebf2" }}>₹{item.price?.toFixed(0) ?? "—"}</strong>
+                          {item.price != null && (
+                            <strong style={{ fontSize: "1.1rem", color: "#e7ebf2" }}>₹{item.price.toFixed(0)}</strong>
+                          )}
                           <button className="ghost" onClick={() => removeItem(item.unified_item_id)}>Remove</button>
                         </div>
                       </div>
@@ -1011,44 +1013,9 @@ function RecommendationCard({
   const [open, setOpen] = useState(false);
 
   const productTitle = item.product.title;
-  const category = (item.product.category || "").toLowerCase();
-  const rawPlatform = (item.product.source_platform || "").toLowerCase();
-
-  const isElectronicsOrTech =
-    category.includes("electronic") ||
-    category.includes("computer") ||
-    category.includes("appliance") ||
-    category.includes("tech") ||
-    category.includes("audio") ||
-    category.includes("gaming") ||
-    category.includes("book") ||
-    category.includes("home");
-
-  let validPlatform = rawPlatform;
-  // Ajio and Myntra ONLY sell Fashion/Clothing/Apparel! Route electronics to Amazon or Flipkart.
-  if (isElectronicsOrTech && (validPlatform === "ajio" || validPlatform === "myntra")) {
-    validPlatform = productTitle.length % 2 === 0 ? "amazon" : "flipkart";
-  }
-
-  if (!validPlatform || validPlatform === "all" || validPlatform === "unified") {
-    validPlatform = "amazon";
-  }
-
   let searchUrl = item.product.url;
-  if (!searchUrl) {
-    if (validPlatform === "flipkart") {
-      searchUrl = `https://www.flipkart.com/search?q=${encodeURIComponent(productTitle)}`;
-    } else if (validPlatform === "myntra") {
-      searchUrl = `https://www.myntra.com/${encodeURIComponent(productTitle)}`;
-    } else if (validPlatform === "ajio") {
-      searchUrl = `https://www.ajio.com/search/?text=${encodeURIComponent(productTitle)}`;
-    } else {
-      validPlatform = "amazon";
-      searchUrl = `https://www.amazon.in/s?k=${encodeURIComponent(productTitle)}`;
-    }
-  }
-
-  const platformName = PLATFORM_DETAILS[validPlatform]?.name || (validPlatform.charAt(0).toUpperCase() + validPlatform.slice(1));
+  const hasVerifiedProductUrl = Boolean(searchUrl);
+  if (!searchUrl) searchUrl = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(productTitle)}`;
 
   return (
     <article className="rec-card">
@@ -1081,7 +1048,7 @@ function RecommendationCard({
                 border: "1px solid rgba(240, 231, 213, 0.22)"
               }}
             >
-              View on {platformName} <IconExternalLink />
+              {hasVerifiedProductUrl ? "View product" : "Compare stores"} <IconExternalLink />
             </a>
           </div>
         </div>

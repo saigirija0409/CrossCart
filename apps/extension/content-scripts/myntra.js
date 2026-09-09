@@ -76,7 +76,7 @@
 
       const priceText = card.textContent || "";
       const priceMatch = priceText.match(/(?:₹|Rs\.?|INR|\$)\s?([\d,]+)/i) || priceText.match(/[\d,]+/);
-      let price = 499.0;
+      let price = null;
       if (priceMatch) {
         const parsed = parseFloat(priceMatch[1] ? priceMatch[1].replace(/,/g, "") : priceMatch[0].replace(/,/g, ""));
         if (parsed > 0 && parsed < 500000) price = parsed;
@@ -116,7 +116,7 @@
         scraped.push({
           platform,
           title: rawTitle,
-          price: 499.0,
+        price: null,
           category: "",
           url: link.href || window.location.href,
           platform_product_id: link.href || window.location.href,

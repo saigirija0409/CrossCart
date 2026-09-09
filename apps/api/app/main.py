@@ -352,7 +352,7 @@ def get_wishlist(user=Depends(require_user), conn=Depends(db)) -> dict[str, Any]
     items = fetch_all(
         conn,
         """
-        select u.*, p.source_platform, p.brand
+        select u.*, u.source_url as url, p.source_platform, p.brand
         from unified_wishlist_items u
         left join products p on p.product_id = u.canonical_product_id
         where u.user_id = ?
@@ -421,7 +421,7 @@ def clear_wishlist(platform: str | None = Query(default=None), user=Depends(requ
     remaining = fetch_all(
         conn,
         """
-        select u.*, p.source_platform, p.brand
+        select u.*, u.source_url as url, p.source_platform, p.brand
         from unified_wishlist_items u
         left join products p on p.product_id = u.canonical_product_id
         where u.user_id = ?

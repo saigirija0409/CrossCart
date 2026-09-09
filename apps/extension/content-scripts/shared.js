@@ -288,7 +288,7 @@
       if (!title || isGarbageTitle(title)) continue;
       const text = cleanText(node.textContent || "");
       const rawPrice = parsePrice(text);
-      const numericPrice = rawPrice ? parseFloat(rawPrice) : 499.0;
+      const numericPrice = rawPrice ? parseFloat(rawPrice) : null;
 
       const productId = extractId(node);
       const url = node.querySelector("a[href]")?.href || window.location.href;
@@ -390,7 +390,7 @@
       items.push({
         platform: "myntra",
         title,
-        price: rawPrice ? parseFloat(rawPrice) : 499.0,
+        price: rawPrice ? parseFloat(rawPrice) : null,
         category: "",
         url: link.href,
         platform_product_id: link.href,
@@ -467,7 +467,7 @@
       items.push({
         platform: "nykaa",
         title,
-        price: rawPrice ? parseFloat(rawPrice) : 499.0,
+        price: rawPrice ? parseFloat(rawPrice) : null,
         category: "",
         url: productId,
         platform_product_id: productId,
