@@ -27,7 +27,7 @@ class CategoryPreferencesRequest(BaseModel):
 
 
 class PlatformConnectRequest(BaseModel):
-    platform: Literal["amazon", "flipkart", "myntra", "ajio"]
+    platform: Literal["amazon", "flipkart", "myntra", "ajio", "tatacliq", "nykaa"]
     auth_token: str | None = None
 
 
