@@ -6,4 +6,5 @@ dist/
 .env
 data/app.db
 data/*.sqlite
+*.db
 *.log
