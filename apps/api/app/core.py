@@ -1327,49 +1327,72 @@ def cold_start_adjustment(conn: sqlite3.Connection, user_id: str, product_catego
 
 def explanation_for_product(product: dict[str, Any], profile: dict[str, Any], community_top: list[str], scores: dict[str, float]) -> str:
     title = product.get("title", "Product")
-    inferred_cat = map_category(title)
-    category = inferred_cat if inferred_cat != "General" else (product.get("category") or "General")
+    category = product.get("category") or map_category(title) or "General"
     brand = product.get("brand") or brand_from_text(title, category) or "Verified Brand"
-    price = product.get("price")
     rating = product.get("avg_rating") or 4.5
-    platform = (product.get("source_platform") or "Amazon").capitalize()
 
     wish_sim = scores.get("wishlist_similarity", 0)
     comm_pref = scores.get("community_preference", 0)
     trend = scores.get("trending_score", 0)
+    history = scores.get("browsing_history_score", 0)
 
-    # Recommendation candidates are catalog entries, not live retailer offers.
-    # Never put an unverified stored value into a recommendation explanation.
-    price_str = ""
-    title_lower = title.lower()
-
-    # Product-aware domain explanation override
-    if any(k in title_lower for k in ["shampoo", "conditioner", "grooming", "hair", "soap", "facewash", "lotion"]):
-        return f"{title}{price_str} is a top-rated personal care essential ({rating}★) recommended for exceptional grooming value and daily wellness."
-    if any(k in title_lower for k in ["study guide", "book", "classic", "novel", "edition", "paperback"]):
-        return f"{title}{price_str} is a highly rated publication ({rating}★) selected to enrich your reading list with great value on {platform}."
-    if any(k in title_lower for k in ["charger", "power bank", "earbuds", "headphones", "smartwatch", "laptop", "monitor", "mouse"]):
-        return f"{title}{price_str} provides high-performance tech utility ({rating}★) matching your active gadget & electronics preferences."
-
-    reasons = []
-    if wish_sim > 0.35 and category.lower() in [c.lower() for c in (profile.get("top_categories") or [])]:
-        reasons.append(f"closely aligns with your interest in {category.lower()}")
-    elif category in (profile.get("top_categories") or []):
-        reasons.append(f"matches your interest in {category.lower()}")
-
-    if comm_pref > 0.25 or category in community_top:
-        reasons.append(f"is highly rated ({rating}★) by shoppers looking for {brand}")
-
-    if trend >= 0.45:
-        reasons.append(f"is currently trending on {platform}")
-    elif wish_sim > 0.15:
-        reasons.append(f"offers excellent value in {category.lower()}")
-
+    reasons: list[str] = []
+    top_categories = {str(value).lower() for value in profile.get("top_categories") or []}
+    if category.lower() in top_categories:
+        reasons.append(f"it matches your saved {category.lower()} picks")
+    elif wish_sim >= 0.25:
+        reasons.append("its style is close to products already in your wishlist")
+    if history >= 0.15:
+        reasons.append(f"you frequently explore {category.lower()}")
+    if comm_pref >= 0.20 or category in community_top:
+        reasons.append("shoppers with similar taste are saving this category")
+    if trend >= 0.35:
+        reasons.append("it is gaining momentum across wishlists")
     if not reasons:
-        reasons.append(f"is recommended based on high customer satisfaction ({rating}★) and price consistency on {platform}")
+        reasons.append(f"it adds a highly rated ({rating}★) {brand} option to your mix")
 
-    explanation_body = " and ".join(reasons)
-    return f"{title}{price_str} {explanation_body}."
+    return f"Why it fits: {reasons[0].capitalize()}" + (f", and {reasons[1]}" if len(reasons) > 1 else "") + "."
+
+
+def diversify_candidates(candidates: list[dict[str, Any]], top_n: int) -> list[dict[str, Any]]:
+    """Use relevance-first MMR so one category or brand cannot dominate the feed."""
+    remaining = list(candidates)
+    selected: list[dict[str, Any]] = []
+    category_counts: Counter[str] = Counter()
+    brand_counts: Counter[str] = Counter()
+
+    while remaining and len(selected) < top_n:
+        best_index = 0
+        best_score = float("-inf")
+        for index, candidate in enumerate(remaining):
+            product = candidate["product"]
+            category = str(product.get("category") or "General").lower()
+            brand = str(product.get("brand") or "").lower()
+            tokens = set(tokenize(product.get("title") or ""))
+            nearest_title = max(
+                (jaccard_similarity(tokens, set(tokenize(item["product"].get("title") or ""))) for item in selected),
+                default=0.0,
+            )
+            novelty_penalty = 0.18 * nearest_title + 0.07 * category_counts[category]
+            if brand:
+                novelty_penalty += 0.05 * brand_counts[brand]
+            mmr_score = float(candidate["final_score"]) - novelty_penalty
+            stable_tie = str(product.get("product_id") or "")
+            current_tie = str(remaining[best_index]["product"].get("product_id") or "")
+            if mmr_score > best_score or (mmr_score == best_score and stable_tie < current_tie):
+                best_index = index
+                best_score = mmr_score
+
+        chosen = remaining.pop(best_index)
+        selected.append(chosen)
+        chosen_product = chosen["product"]
+        category_counts[str(chosen_product.get("category") or "General").lower()] += 1
+        chosen_brand = str(chosen_product.get("brand") or "").lower()
+        if chosen_brand:
+            brand_counts[chosen_brand] += 1
+
+    selected_ids = {item["product"].get("product_id") for item in selected}
+    return selected + [item for item in candidates if item["product"].get("product_id") not in selected_ids]
 
 
 def anthropic_rank_products(candidates: list[dict[str, Any]], top_n: int, profile: dict[str, Any], community_top: list[str]) -> list[dict[str, Any]] | None:
@@ -1431,15 +1454,41 @@ def anthropic_rank_products(candidates: list[dict[str, Any]], top_n: int, profil
         recommendations = parsed.get("recommendations") or []
         if not recommendations:
             return None
+        valid_ids = {item["product"]["product_id"] for item in candidates}
         normalized = []
-        for entry in recommendations[:top_n]:
+        seen_ids: set[str] = set()
+        for entry in recommendations:
+            product_id = str(entry.get("product_id") or "")
+            if product_id not in valid_ids or product_id in seen_ids:
+                continue
+            seen_ids.add(product_id)
             normalized.append(
                 {
-                    "product_id": entry["product_id"],
-                    "rank": int(entry["rank"]),
+                    "product_id": product_id,
+                    "rank": len(normalized) + 1,
                     "explanation": str(entry["explanation"])[:220],
                 }
             )
+            if len(normalized) >= top_n:
+                break
+        for item in candidates:
+            product_id = item["product"]["product_id"]
+            if len(normalized) >= top_n:
+                break
+            if product_id in seen_ids:
+                continue
+            seen_ids.add(product_id)
+            scores = {
+                "wishlist_similarity": item["wishlist_similarity"],
+                "community_preference": item["community_preference"],
+                "trending_score": item["trending_score"],
+                "browsing_history_score": item["browsing_history_score"],
+            }
+            normalized.append({
+                "product_id": product_id,
+                "rank": len(normalized) + 1,
+                "explanation": explanation_for_product(item["product"], profile, community_top, scores),
+            })
         return normalized
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError, KeyError, TimeoutError, json.JSONDecodeError):
         return None
@@ -1450,10 +1499,7 @@ def llm_rank_products(candidates: list[dict[str, Any]], top_n: int, profile: dic
     if anthropic_result:
         return anthropic_result
 
-    if refresh:
-        ordered = candidates[:top_n]
-    else:
-        ordered = sorted(candidates, key=lambda item: item["final_score"], reverse=True)[:top_n]
+    ordered = candidates[:top_n]
 
     results = []
     for rank, item in enumerate(ordered, start=1):
@@ -1536,11 +1582,10 @@ def score_products(
         current_reco_pids = set(r["product_id"] for r in current_recos)
 
     raw_candidates = candidate_products(conn, query_vector, exclude_user_id=user_id, limit=200)
-    if refresh and len(raw_candidates) > top_n:
-        random.shuffle(raw_candidates)
 
     user_wishlist_count = len(wishlist_rows)
     onboarding_answers = set(profile.get("onboarding_answers") or [])
+    query_tokens = set(tokenize(query_text or ""))
 
     personalized: list[dict[str, Any]] = []
     for candidate in raw_candidates:
@@ -1571,6 +1616,10 @@ def score_products(
             wishlist_similarity = round(0.35 * emb_sim + 0.45 * cat_match + 0.20 * title_sim, 6)
         else:
             wishlist_similarity = emb_sim
+        if query_tokens:
+            searchable_tokens = cand_tokens | set(tokenize(product.get("category") or "")) | set(tokenize(product.get("brand") or ""))
+            query_relevance = len(query_tokens & searchable_tokens) / max(len(query_tokens), 1)
+            wishlist_similarity = round(max(wishlist_similarity, query_relevance), 6)
 
         community_preference = round(float(community_map.get(product["category"], 0.0)), 6)
         trending_score = round(float(trending_map.get(product["product_id"], 0.0)), 6)
@@ -1594,9 +1643,7 @@ def score_products(
             + like_boost
         )
 
-        # Apply minor ties-breaker jitter on refresh without corrupting ranking relevance
-        jitter = random.uniform(-0.03, 0.03) if refresh else 0.0
-        final_score = round(max(0.0, base_final + jitter), 6)
+        final_score = round(max(0.0, base_final), 6)
 
         personalized.append(
             {
@@ -1609,13 +1656,8 @@ def score_products(
             }
         )
 
-    # Sort strictly by final recommendation score
-    personalized.sort(key=lambda item: item["final_score"], reverse=True)
-    if refresh and len(personalized) > top_n:
-        # Rotate among the top 15 highest relevant products
-        top_tier = personalized[:min(15, len(personalized))]
-        random.shuffle(top_tier)
-        personalized = top_tier + personalized[min(15, len(personalized)):]
+    personalized.sort(key=lambda item: (-item["final_score"], str(item["product"].get("product_id") or "")))
+    personalized = diversify_candidates(personalized, top_n)
 
     ranked = llm_rank_products(personalized, top_n, profile, community_top, refresh=refresh)
     return personalized, {"community_id": community_id, "generated_at": iso_now(), "ranked": ranked, "profile": profile, "community_top": community_top, "query_text": query_text}

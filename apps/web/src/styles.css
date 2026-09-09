@@ -374,6 +374,56 @@ label {
   border-radius: 24px;
   padding: 1.1rem 1.2rem;
   background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.rec-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(195, 142, 180, 0.45);
+  box-shadow: 0 16px 34px rgba(6, 15, 30, 0.28);
+}
+
+.rec-card-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(195, 142, 180, 0.3), rgba(134, 168, 207, 0.25));
+  border: 1px solid rgba(195, 142, 180, 0.35);
+  color: var(--accent-strong);
+}
+
+.recommendation-empty {
+  grid-column: 1 / -1;
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 24px;
+  background: rgba(11, 23, 48, 0.28);
+}
+
+.recommendation-empty strong {
+  color: var(--text);
+  font-size: 1.05rem;
 }
 
 .metric-card span {

@@ -784,7 +784,10 @@ function App() {
         {view === "recommendations" && (
           <section className="panel">
             <div className="panel-title">
-              <h3>Top recommendations</h3>
+              <div>
+                <h3>Your discovery mix</h3>
+                <span className="muted">Relevant to your wishlist, balanced across categories, and shaped by your feedback.</span>
+              </div>
               <button
                 className="secondary"
                 onClick={refreshRecommendations}
@@ -803,9 +806,14 @@ function App() {
               </button>
             </div>
             <div className="rec-grid">
-              {recommendations.map((item) => (
+              {recommendations.length ? recommendations.map((item) => (
                 <RecommendationCard key={item.recommendation_id} item={item} onFeedback={submitFeedback} admin={user.role === "admin"} />
-              ))}
+              )) : (
+                <div className="recommendation-empty">
+                  <strong>Your discovery mix is warming up</strong>
+                  <span>Sync a wishlist or add a few products, then refresh to get tailored picks.</span>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -1019,6 +1027,10 @@ function RecommendationCard({
 
   return (
     <article className="rec-card">
+      <div className="rec-card-kicker">
+        <span className="rank-badge">#{item.rank}</span>
+        <span>{item.rank <= 3 ? "Top match" : "Recommended for you"}</span>
+      </div>
       <div className="rec-top">
         {item.product.image_url ? (
           <img src={item.product.image_url} alt={productTitle} className="thumb" style={{ width: 52, height: 52, borderRadius: 12, objectFit: "cover" }} />
@@ -1054,10 +1066,10 @@ function RecommendationCard({
         </div>
       </div>
       <div className="button-row compact" style={{ marginTop: "0.75rem" }}>
-        <button className="ghost" onClick={() => onFeedback(item.recommendation_id, "like")}>Like</button>
-        <button className="ghost" onClick={() => onFeedback(item.recommendation_id, "dislike")}>Dislike</button>
+        <button className="ghost" onClick={() => onFeedback(item.recommendation_id, "like")}>♡ More like this</button>
+        <button className="ghost" onClick={() => onFeedback(item.recommendation_id, "dislike")}>Hide</button>
         {[1, 2, 3, 4, 5].map((rating) => (
-          <button key={rating} className="rating-pill" onClick={() => onFeedback(item.recommendation_id, "rating", rating)}>{rating}</button>
+          <button key={rating} className="rating-pill" aria-label={`Rate ${rating} out of 5`} onClick={() => onFeedback(item.recommendation_id, "rating", rating)}>★{rating}</button>
         ))}
       </div>
       <button className="explain-toggle" onClick={() => setOpen((current) => !current)}>

@@ -443,12 +443,11 @@ def recommendation_response(conn, user, top_n: int, query_text: str | None = Non
                     "generated_at": existing[0].get("generated_at") or iso_now(),
                 }
 
+        query_vector = build_query_vector(conn, user["user_id"], query_text)
+        personalized, meta = score_products(conn, user["user_id"], query_vector, top_n, query_text=query_text, refresh=refresh)
+        ranked = meta["ranked"]
         conn.execute("delete from recommendations where user_id = ?", (user["user_id"],))
         conn.commit()
-
-        query_vector = build_query_vector(conn, user["user_id"], query_text)
-        personalized, meta = score_products(conn, user["user_id"], query_vector, top_n, query_text=query_text, refresh=True)
-        ranked = meta["ranked"]
         persisted = persist_recommendations(conn, user["user_id"], personalized, ranked, generated_by="search" if query_text else "recommendations")
         include_debug = user["role"] == "admin"
         recommendation_items = [

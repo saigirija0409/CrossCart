@@ -12,6 +12,7 @@ from apps.api.app.core import (
     build_community_graph,
     candidate_products,
     community_similarity,
+    diversify_candidates,
     ensure_schema,
     feedback_nudge,
     hash_password,
@@ -143,6 +144,16 @@ def test_candidates_deduplicate_same_catalog_product_title() -> None:
     shirts = [candidate for candidate in candidates if candidate["product"]["title"] == "H&M Oversized Shirt"]
     assert len(shirts) == 1
     assert shirts[0]["product"]["price"] == 1299
+
+
+def test_recommendations_balance_relevance_with_category_and_brand_diversity() -> None:
+    candidates = [
+        {"product": {"product_id": "a", "title": "Pro Wireless Earbuds", "category": "Electronics", "brand": "Acme"}, "final_score": 0.90},
+        {"product": {"product_id": "b", "title": "Wireless Earbuds Pro", "category": "Electronics", "brand": "Acme"}, "final_score": 0.88},
+        {"product": {"product_id": "c", "title": "Relaxed Linen Shirt", "category": "Fashion", "brand": "North"}, "final_score": 0.72},
+    ]
+    diversified = diversify_candidates(candidates, top_n=2)
+    assert [item["product"]["product_id"] for item in diversified[:2]] == ["a", "c"]
 
 
 def test_only_storefront_synced_prices_are_marked_as_verified() -> None:
