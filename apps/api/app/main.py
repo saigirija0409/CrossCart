@@ -33,6 +33,7 @@ from .core import (
     import_csv_items,
     is_valid_product,
     iso_now,
+    json_maybe_load,
     latest_recommendations,
     new_id,
     paginated_products,
@@ -250,7 +251,7 @@ def onboarding_preferences(payload: CategoryPreferencesRequest, user=Depends(req
         "insert into onboarding_preferences (user_id, answers_json, created_at) values (?, ?, ?)",
         (user["user_id"], json.dumps(answers), iso_now()),
     )
-    behavior = json.loads(user.get("behavior_vector") or "{}")
+    behavior = json_maybe_load(user.get("behavior_vector"), {})
     for category in answers:
         behavior[category] = round(float(behavior.get(category, 0.0)) + 0.10, 6)
     total = sum(float(v) for v in behavior.values()) or 1.0
