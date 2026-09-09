@@ -1,0 +1,59 @@
+[
+  {
+    "tag": "tech_enthusiast",
+    "label": "Tech & Gadgets Enthusiast",
+    "categories": ["Electronics", "Computers", "Audio", "Gaming"],
+    "price_band": [1200, 40000],
+    "brands": ["Sony", "Samsung", "Apple", "Anker", "BoAt", "ASUS"]
+  },
+  {
+    "tag": "fashion_forward",
+    "label": "Fashion Forward",
+    "categories": ["Fashion", "Footwear", "Accessories"],
+    "price_band": [700, 18000],
+    "brands": ["Puma", "Nike", "Adidas", "H&M", "Zara", "Mango"]
+  },
+  {
+    "tag": "home_curator",
+    "label": "Home & Kitchen Curator",
+    "categories": ["Home & Kitchen", "Furniture", "Decor", "Appliances"],
+    "price_band": [500, 25000],
+    "brands": ["Ikea", "Prestige", "Philips", "Bajaj", "Home Centre"]
+  },
+  {
+    "tag": "fitness_wellness",
+    "label": "Fitness & Wellness",
+    "categories": ["Fitness", "Sports", "Wellness", "Wearables"],
+    "price_band": [500, 30000],
+    "brands": ["Cult", "Decathlon", "Puma", "Nike", "Fitbit", "Noise"]
+  },
+  {
+    "tag": "budget_student",
+    "label": "Budget Student Shopper",
+    "categories": ["Books", "Stationery", "Electronics", "Accessories"],
+    "price_band": [99, 7000],
+    "brands": ["Classmate", "Cello", "HP", "Boat", "Chumbak"]
+  },
+  {
+    "tag": "beauty_personal_care",
+    "label": "Beauty & Personal Care",
+    "categories": ["Beauty", "Personal Care", "Wellness", "Fashion"],
+    "price_band": [149, 15000],
+    "brands": ["Maybelline", "Lakme", "The Body Shop", "Minimalist", "Mamaearth"]
+  },
+  {
+    "tag": "bookworm_stationery",
+    "label": "Bookworm & Stationery",
+    "categories": ["Books", "Stationery", "Office Supplies", "Education"],
+    "price_band": [120, 6000],
+    "brands": ["Penguin", "Camlin", "Classmate", "Navneet", "HP"]
+  },
+  {
+    "tag": "family_household",
+    "label": "Parent / Family Household",
+    "categories": ["Home & Kitchen", "Groceries", "Kids", "Appliances", "Decor"],
+    "price_band": [300, 30000],
+    "brands": ["Aashirvaad", "Prestige", "Philips", "Ikea", "Sunfeast"]
+  }
+]
+

@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "Wishlist Unifier",
+  "version": "1.0.0",
+  "action": {
+    "default_popup": "popup/index.html"
+  },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "*://*.amazon.in/*",
+    "*://*.flipkart.com/*",
+    "*://*.myntra.com/*",
+    "*://*.ajio.com/*",
+    "*://*.tatacliq.com/*",
+    "*://*.nykaa.com/*",
+    "*://www.google.com/search*",
+    "*://www.google.co.in/search*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+    "http://localhost:5173/*",
+    "http://localhost:5174/*",
+    "http://127.0.0.1:5173/*",
+    "http://127.0.0.1:5174/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5173/*",
+        "http://localhost:5174/*",
+        "http://127.0.0.1:5173/*",
+        "http://127.0.0.1:5174/*"
+      ],
+      "js": ["content-scripts/web-bridge.js"]
+    },
+    {
+      "matches": ["*://*.amazon.in/*"],
+      "js": ["content-scripts/shared.js", "content-scripts/amazon.js"]
+    },
+    {
+      "matches": ["*://*.flipkart.com/*"],
+      "js": ["content-scripts/shared.js", "content-scripts/flipkart.js"]
+    },
+    {
+      "matches": ["*://*.myntra.com/*"],
+      "js": ["content-scripts/shared.js", "content-scripts/myntra.js"]
+    },
+    {
+      "matches": ["*://*.ajio.com/*"],
+      "js": ["content-scripts/shared.js", "content-scripts/ajio.js"]
+    },
+    {
+      "matches": ["*://*.tatacliq.com/*"],
+      "js": ["content-scripts/shared.js", "content-scripts/tatacliq.js"]
+    },
+    {
+      "matches": ["*://*.nykaa.com/*"],
+      "js": ["content-scripts/shared.js", "content-scripts/nykaa.js"]
+    },
+    {
+      "matches": ["*://www.google.com/search*","*://www.google.co.in/search*"],
+      "js": ["content-scripts/shared.js", "content-scripts/google.js"]
+    }
+  ]
+}

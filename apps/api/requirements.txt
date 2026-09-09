@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pyjwt
+python-multipart
+APScheduler
+networkx
+igraph
+leidenalg
+pytest
+httpx
+
+
