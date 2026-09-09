@@ -10,6 +10,7 @@ from apps.api.app.core import (
     adaptive_weight_score,
     add_raw_items,
     build_community_graph,
+    candidate_products,
     community_similarity,
     ensure_schema,
     feedback_nudge,
@@ -17,6 +18,7 @@ from apps.api.app.core import (
     iso_now,
     new_id,
     preprocess_user,
+    product_price_is_verified,
 )
 
 
@@ -110,6 +112,42 @@ def test_preprocessing_dedup_merges_near_duplicates() -> None:
     assert result["unified_wishlist_size"] == 1
     row = conn.execute("select source_platforms from unified_wishlist_items where user_id = ?", (user_id,)).fetchone()
     assert sorted(json.loads(row["source_platforms"])) == ["amazon", "flipkart"]
+
+
+def test_preprocessing_cleans_storefront_text_and_merges_repeated_cards() -> None:
+    conn = make_conn()
+    user_id = insert_user(conn)
+    conn.executemany(
+        """
+        insert into wishlist_items_raw (
+            item_id, connection_id, user_id, platform, platform_product_id, title, price, category, raw_payload, fetched_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (new_id(), None, user_id, "myntra", "m-1", "OUT OF STOCKNike Air Force 1 '07 Rs.NaN SHOW SIMILAR", 10795, "Footwear", json.dumps({}), iso_now()),
+            (new_id(), None, user_id, "myntra", "m-2", "Nike Air Force 1 '07", 10795, "Footwear", json.dumps({}), iso_now()),
+        ],
+    )
+    result = preprocess_user(conn, user_id)
+    assert result["unified_wishlist_size"] == 1
+    row = conn.execute("select title, price from unified_wishlist_items where user_id = ?", (user_id,)).fetchone()
+    assert row["title"] == "Nike Air Force 1 '07"
+    assert row["price"] == 10795
+
+
+def test_candidates_deduplicate_same_catalog_product_title() -> None:
+    conn = make_conn()
+    insert_product(conn, "H&M Oversized Shirt", "Fashion", 1299, product_id="shirt-a")
+    insert_product(conn, "H&M Oversized Shirt", "Fashion", 1599, product_id="shirt-b")
+    candidates = candidate_products(conn, [0.0] * 384)
+    shirts = [candidate for candidate in candidates if candidate["product"]["title"] == "H&M Oversized Shirt"]
+    assert len(shirts) == 1
+    assert shirts[0]["product"]["price"] == 1299
+
+
+def test_only_storefront_synced_prices_are_marked_as_verified() -> None:
+    assert not product_price_is_verified({"attributes": json.dumps({"tags": ["fashion"]})})
+    assert product_price_is_verified({"attributes": json.dumps({"user_added": True})})
 
 
 def test_feedback_nudges_behavior_vector() -> None:
@@ -229,4 +267,3 @@ def test_history_and_job_logging() -> None:
     assert len(recs) == 1
     reco_in_db = conn.execute("select * from recommendations where recommendation_id = ?", (recs[0]["recommendation_id"],)).fetchone()
     assert reco_in_db is not None or reco_in_db["product_id"] == product_id
-

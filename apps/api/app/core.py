@@ -116,6 +116,29 @@ def normalize_title(value: str | None) -> str:
     return normalize_text(value)
 
 
+def clean_wishlist_title(value: str | None) -> str:
+    """Remove storefront UI labels that are not part of a product's title."""
+    text = (value or "").replace("\xa0", " ")
+    text = re.sub(r"(?:₹|rs\.?|inr|\$)\s*(?:[\d,]+|nan)\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(?:out\s+of\s+stock|show\s+similar|move\s+to\s+bag|add\s+to\s+bag|move\s+to\s+cart|select\s+size)\s*", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\(\s*\)", " ", text)
+    return re.sub(r"\s+", " ", text).strip(" -–—()")
+
+
+def wishlist_title_identity(value: str | None) -> str:
+    """A stable key for merging the same saved product across storefront markup."""
+    normalized = normalize_title(clean_wishlist_title(value))
+    # Some legacy scraped names began with a rating such as `4.5New Balance`.
+    normalized = re.sub(r"^\d+\s+\d+(?=[a-z])", "", normalized)
+    return normalized.strip()
+
+
+def product_price_is_verified(product: dict[str, Any]) -> bool:
+    """Only show a price as current when it came from a user's storefront sync."""
+    attributes = json_maybe_load(product.get("attributes"), {})
+    return bool(attributes.get("user_added"))
+
+
 def tokenize(value: str) -> list[str]:
     return [part for part in normalize_text(value).split(" ") if part]
 
@@ -790,6 +813,19 @@ def cleanup_non_products(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def cleanup_orphan_user_products(conn: sqlite3.Connection) -> None:
+    """Remove dynamic catalog rows left behind when a user re-syncs a store."""
+    referenced = {
+        row["canonical_product_id"]
+        for row in fetch_all(conn, "select distinct canonical_product_id from unified_wishlist_items")
+        if row.get("canonical_product_id")
+    }
+    for product in fetch_all(conn, "select product_id, attributes from products"):
+        attributes = json_maybe_load(product.get("attributes"), {})
+        if attributes.get("user_added") and product["product_id"] not in referenced:
+            conn.execute("delete from products where product_id = ?", (product["product_id"],))
+
+
 def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
     raw_items = fetch_all(conn, "select * from wishlist_items_raw where user_id = ? order by fetched_at asc", (user_id,))
     products = fetch_all(conn, "select * from products")
@@ -799,7 +835,7 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
     category_counter: Counter[str] = Counter()
 
     for item in raw_items:
-        item_title = item.get("title") or "Wishlist Product"
+        item_title = clean_wishlist_title(item.get("title") or "Wishlist Product")
         if not is_valid_product(item_title):
             continue
         item_price = float(item.get("price") or 0)
@@ -858,9 +894,9 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
             })
 
         # Match by normalized title or canonical id in user's unified wishlist
-        normalized_item_title = normalize_title(item_title)
+        normalized_item_title = wishlist_title_identity(item_title)
         existing = next(
-            (row for row in unified_before if normalize_title(row["title"]) == normalized_item_title or row["canonical_product_id"] == canonical_id),
+            (row for row in unified_before if wishlist_title_identity(row["title"]) == normalized_item_title or row["canonical_product_id"] == canonical_id),
             None,
         )
 
@@ -868,8 +904,8 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
             platforms = set(json_maybe_load(existing.get("source_platforms"), []))
             platforms.add(item["platform"])
             conn.execute(
-                "update unified_wishlist_items set category = ?, title = ?, source_platforms = ?, price = coalesce(nullif(?, 0), price) where unified_item_id = ?",
-                (item_category, item_title, json.dumps(sorted(platforms)), item_price, existing["unified_item_id"]),
+                "update unified_wishlist_items set canonical_product_id = ?, category = ?, title = ?, source_platforms = ?, price = coalesce(nullif(?, 0), price) where unified_item_id = ?",
+                (canonical_id, item_category, item_title, json.dumps(sorted(platforms)), item_price, existing["unified_item_id"]),
             )
             merged += 1
         else:
@@ -916,6 +952,8 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
 
 def add_raw_items(conn: sqlite3.Connection, user_id: str, platform: str, items: list[dict[str, Any]], connection_id: str | None = None) -> dict[str, Any]:
     plat_lower = (platform or "manual").lower()
+    # Wishlist changes invalidate the cached recommendation set immediately.
+    conn.execute("delete from recommendations where user_id = ?", (user_id,))
     if plat_lower != "manual":
         conn.execute("delete from wishlist_items_raw where user_id = ? and lower(platform) = ?", (user_id, plat_lower))
         conn.execute("delete from unified_wishlist_items where user_id = ? and (lower(source_platforms) like ? or lower(source_platforms) = ?)", (user_id, f'%"{plat_lower}"%', plat_lower))
@@ -942,7 +980,9 @@ def add_raw_items(conn: sqlite3.Connection, user_id: str, platform: str, items: 
             ),
         )
         normalized += 1
-    return preprocess_user(conn, user_id)
+    result = preprocess_user(conn, user_id)
+    cleanup_orphan_user_products(conn)
+    return result
 
 
 def import_csv_items(conn: sqlite3.Connection, user_id: str, csv_text: str) -> dict[str, Any]:
@@ -1210,7 +1250,7 @@ def candidate_products(conn: sqlite3.Connection, query_vector: list[float], excl
     if exclude_user_id:
         user_owned = {row["canonical_product_id"] for row in fetch_all(conn, "select canonical_product_id from unified_wishlist_items where user_id = ?", (exclude_user_id,))}
     products = fetch_all(conn, "select * from products")
-    scored = []
+    best_by_title: dict[str, tuple[float, dict[str, Any]]] = {}
     for product in products:
         if product["product_id"] in user_owned:
             continue
@@ -1221,7 +1261,13 @@ def candidate_products(conn: sqlite3.Connection, query_vector: list[float], excl
             similarity = round(sum(x * y for x, y in zip(emb, query_vector)), 6)
         else:
             similarity = 0.0
-        scored.append((similarity, product))
+        identity = wishlist_title_identity(product.get("title"))
+        previous = best_by_title.get(identity)
+        # Keep one catalog entry per product title. Tie-break by a stable ID, never
+        # by the generated catalog price, because it is not a live retailer quote.
+        if previous is None or similarity > previous[0] or (similarity == previous[0] and product["product_id"] < previous[1]["product_id"]):
+            best_by_title[identity] = (similarity, product)
+    scored = list(best_by_title.values())
     scored.sort(key=lambda item: item[0], reverse=True)
     return [{"product": product, "wishlist_similarity": round(score, 6)} for score, product in scored[:limit]]
 
@@ -1278,7 +1324,9 @@ def explanation_for_product(product: dict[str, Any], profile: dict[str, Any], co
     comm_pref = scores.get("community_preference", 0)
     trend = scores.get("trending_score", 0)
 
-    price_str = f" priced at ₹{price:.0f}" if price else ""
+    # Recommendation candidates are catalog entries, not live retailer offers.
+    # Never put an unverified stored value into a recommendation explanation.
+    price_str = ""
     title_lower = title.lower()
 
     # Product-aware domain explanation override
@@ -1610,7 +1658,7 @@ def latest_recommendations(conn: sqlite3.Connection, user_id: str, limit: int) -
     rows = fetch_all(
         conn,
         """
-        select r.*, p.title, p.category, p.brand, p.price, p.source_platform, p.avg_rating, p.review_count
+        select r.*, p.title, p.category, p.brand, p.price, p.source_platform, p.avg_rating, p.review_count, p.attributes
         from recommendations r
         join products p on p.product_id = r.product_id
         where r.user_id = ? and p.price is not null and p.price > 0

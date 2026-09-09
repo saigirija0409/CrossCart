@@ -146,7 +146,7 @@ def normalize_recommendation_row(row: dict[str, Any], include_debug: bool = Fals
             "title": row["title"],
             "category": row["category"],
             "brand": row["brand"],
-            "price": row["price"],
+            "price": None,
             "source_platform": row["source_platform"],
             "avg_rating": row["avg_rating"],
         },
@@ -162,6 +162,18 @@ def normalize_recommendation_row(row: dict[str, Any], include_debug: bool = Fals
             "browsing_history_score": round(float(row["browsing_history_score"] or 0), 6),
         }
     return payload
+
+
+def normalize_recommendation_product(product: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "product_id": product["product_id"],
+        "title": product["title"],
+        "category": product["category"],
+        "brand": product.get("brand"),
+        "price": None,
+        "source_platform": product.get("source_platform"),
+        "avg_rating": product.get("avg_rating"),
+    }
 
 
 @app.on_event("startup")
@@ -434,7 +446,7 @@ def recommendation_response(conn, user, top_n: int, query_text: str | None = Non
         recommendation_items = [
             {
                 "recommendation_id": item["recommendation_id"],
-                "product": item["product"],
+                "product": normalize_recommendation_product(item["product"]),
                 "rank": item["rank"],
                 "final_score": item["final_score"],
                 "explanation": item["explanation"],

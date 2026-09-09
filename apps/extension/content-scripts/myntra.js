@@ -24,10 +24,11 @@
   function cleanMyntraTitle(val) {
     if (!val) return "";
     let text = (val || "").replace(/\s+/g, " ").trim();
-    text = text.replace(/(?:₹|Rs\.?|INR|\$)\s?[\d,]+/gi, "");
+    text = text.replace(/(?:₹|Rs\.?|INR|\$)\s?(?:[\d,]+|NaN)/gi, "");
     text = text.replace(/\b\d{1,2}%\s*off\b/gi, "");
     text = text.replace(/\bflat\s*\d{1,2}%\s*off\b/gi, "");
-    text = text.replace(/\b(move to bag|add to bag|select size|remove|done)\b/gi, "");
+    text = text.replace(/\b(out of stock|show similar|move to bag|add to bag|select size|remove|done)\s*/gi, "");
+    text = text.replace(/\(\s*\)/g, "");
     return text.replace(/\s+/g, " ").trim();
   }
 

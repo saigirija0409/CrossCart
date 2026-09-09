@@ -1071,7 +1071,11 @@ function RecommendationCard({
           <h4>{item.product.title}</h4>
           <p>{item.product.category} · {item.product.brand ?? "Brand not listed"}</p>
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.35rem", flexWrap: "wrap" }}>
-            <strong style={{ fontSize: "1.1rem", color: "var(--accent)" }}>₹{item.product.price?.toFixed(0) ?? "—"}</strong>
+            {item.product.price != null ? (
+              <strong style={{ fontSize: "1.1rem", color: "var(--accent)" }}>Last synced: ₹{item.product.price.toFixed(0)}</strong>
+            ) : (
+              <span className="muted">Current price unavailable</span>
+            )}
             <a
               href={searchUrl}
               target="_blank"
@@ -1090,7 +1094,7 @@ function RecommendationCard({
                 border: "1px solid rgba(240, 231, 213, 0.22)"
               }}
             >
-              Buy on {platformName} (Best Price) <IconExternalLink />
+              Check current price on {platformName} <IconExternalLink />
             </a>
           </div>
         </div>
