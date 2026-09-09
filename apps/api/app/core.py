@@ -574,7 +574,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         create table if not exists platform_connections (
             connection_id text primary key,
             user_id text not null references users(user_id) on delete cascade,
-            platform text not null check (platform in ('amazon','flipkart','myntra','ajio')),
+            platform text not null check (platform in ('amazon','flipkart','myntra','ajio','tatacliq','nykaa')),
             auth_token text,
             connected_at text not null,
             last_synced_at text,
@@ -696,6 +696,32 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    connection_table = conn.execute(
+        "select sql from sqlite_master where type = 'table' and name = 'platform_connections'"
+    ).fetchone()
+    if connection_table and "tatacliq" not in connection_table["sql"].lower():
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.executescript(
+            """
+            create table platform_connections_v2 (
+                connection_id text primary key,
+                user_id text not null references users(user_id) on delete cascade,
+                platform text not null check (platform in ('amazon','flipkart','myntra','ajio','tatacliq','nykaa')),
+                auth_token text,
+                connected_at text not null,
+                last_synced_at text,
+                unique(user_id, platform)
+            );
+            insert into platform_connections_v2 (
+                connection_id, user_id, platform, auth_token, connected_at, last_synced_at
+            ) select connection_id, user_id, platform, auth_token, connected_at, last_synced_at
+            from platform_connections;
+            drop table platform_connections;
+            alter table platform_connections_v2 rename to platform_connections;
+            """
+        )
+        conn.execute("PRAGMA foreign_keys = ON")
     cleanup_non_products(conn)
 
 
