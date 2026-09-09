@@ -966,8 +966,9 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
 
 def add_raw_items(conn: sqlite3.Connection, user_id: str, platform: str, items: list[dict[str, Any]], connection_id: str | None = None) -> dict[str, Any]:
     plat_lower = (platform or "manual").lower()
-    # Wishlist changes invalidate the cached recommendation set immediately.
-    conn.execute("delete from recommendations where user_id = ?", (user_id,))
+    # Keep historical recommendation rows because feedback references them. Mark
+    # the visible feed stale so the next request regenerates against new wishlist data.
+    conn.execute("update recommendations set generated_by = 'stale' where user_id = ? and generated_by like 'recommendations%'", (user_id,))
     if plat_lower != "manual":
         conn.execute("delete from wishlist_items_raw where user_id = ? and lower(platform) = ?", (user_id, plat_lower))
         conn.execute("delete from unified_wishlist_items where user_id = ? and (lower(source_platforms) like ? or lower(source_platforms) = ?)", (user_id, f'%"{plat_lower}"%', plat_lower))
@@ -1578,7 +1579,18 @@ def score_products(
 
     current_reco_pids = set()
     if refresh:
-        current_recos = fetch_all(conn, "select product_id from recommendations where user_id = ?", (user_id,))
+        current_recos = fetch_all(
+            conn,
+            """
+            select product_id from recommendations
+            where user_id = ? and generated_by = 'recommendations-v2'
+              and generated_at = (
+                select max(generated_at) from recommendations
+                where user_id = ? and generated_by = 'recommendations-v2'
+              )
+            """,
+            (user_id, user_id),
+        )
         current_reco_pids = set(r["product_id"] for r in current_recos)
 
     raw_candidates = candidate_products(conn, query_vector, exclude_user_id=user_id, limit=200)
@@ -1665,6 +1677,7 @@ def score_products(
 
 def persist_recommendations(conn: sqlite3.Connection, user_id: str, personalized: list[dict[str, Any]], ranked: list[dict[str, Any]], generated_by: str | None = None) -> list[dict[str, Any]]:
     rows = []
+    batch_generated_at = iso_now()
     lookup = {entry.get("product_id") or entry["product"]["product_id"]: entry for entry in personalized}
     for entry in ranked:
         candidate = lookup[entry["product_id"]]
@@ -1689,7 +1702,7 @@ def persist_recommendations(conn: sqlite3.Connection, user_id: str, personalized
                 candidate["browsing_history_score"],
                 entry["explanation"],
                 entry["rank"],
-                iso_now(),
+                batch_generated_at,
                 generated_by,
             ),
         )

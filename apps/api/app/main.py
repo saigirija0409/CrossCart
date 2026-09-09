@@ -394,7 +394,7 @@ def clear_wishlist(platform: str | None = Query(default=None), user=Depends(requ
     if plat_lower in ["all", "null", "undefined", ""]:
         conn.execute("delete from unified_wishlist_items where user_id = ?", (user_id,))
         conn.execute("delete from wishlist_items_raw where user_id = ?", (user_id,))
-        conn.execute("delete from recommendations where user_id = ?", (user_id,))
+        conn.execute("update recommendations set generated_by = 'stale' where user_id = ? and generated_by like 'recommendations%'", (user_id,))
         conn.execute("update users set behavior_vector = '{}' where user_id = ?", (user_id,))
     else:
         conn.execute("delete from wishlist_items_raw where user_id = ? and lower(platform) = ?", (user_id, plat_lower))
@@ -417,6 +417,8 @@ def clear_wishlist(platform: str | None = Query(default=None), user=Depends(requ
             if plat_lower in sp_str:
                 conn.execute("delete from unified_wishlist_items where unified_item_id = ?", (item["unified_item_id"],))
 
+        conn.execute("update recommendations set generated_by = 'stale' where user_id = ? and generated_by like 'recommendations%'", (user_id,))
+
     conn.commit()
     remaining = fetch_all(
         conn,
@@ -436,7 +438,7 @@ def recommendation_response(conn, user, top_n: int, query_text: str | None = Non
     try:
         if not refresh and not query_text:
             existing = latest_recommendations(conn, user["user_id"], top_n)
-            if existing and len(existing) >= top_n:
+            if existing and len(existing) >= top_n and all(row.get("generated_by") == "recommendations-v2" for row in existing[:top_n]):
                 return {
                     "recommendations": [normalize_recommendation_row(row, include_debug=user["role"] == "admin") for row in existing[:top_n]],
                     "community_id": get_latest_membership(conn, user["user_id"])["community_id"] if get_latest_membership(conn, user["user_id"]) else None,
@@ -446,9 +448,7 @@ def recommendation_response(conn, user, top_n: int, query_text: str | None = Non
         query_vector = build_query_vector(conn, user["user_id"], query_text)
         personalized, meta = score_products(conn, user["user_id"], query_vector, top_n, query_text=query_text, refresh=refresh)
         ranked = meta["ranked"]
-        conn.execute("delete from recommendations where user_id = ?", (user["user_id"],))
-        conn.commit()
-        persisted = persist_recommendations(conn, user["user_id"], personalized, ranked, generated_by="search" if query_text else "recommendations")
+        persisted = persist_recommendations(conn, user["user_id"], personalized, ranked, generated_by="search-v2" if query_text else "recommendations-v2")
         include_debug = user["role"] == "admin"
         recommendation_items = [
             {

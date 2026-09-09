@@ -181,6 +181,29 @@ def test_feedback_nudges_behavior_vector() -> None:
     assert after["Electronics"] < before["Electronics"]
 
 
+def test_refresh_preserves_feedback_history() -> None:
+    conn = make_conn()
+    user_id = insert_user(conn)
+    product_id = insert_product(conn, "Wireless Earbuds Pro", "Electronics", 1499, brand="SoundCore")
+    insert_product(conn, "Relaxed Fit Shirt", "Fashion", 1299, brand="North")
+    recommendation_id = new_id()
+    conn.execute(
+        """
+        insert into recommendations (
+            recommendation_id, user_id, product_id, final_score, wishlist_similarity, community_preference,
+            trending_score, browsing_history_score, explanation_text, rank, generated_at, generated_by
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (recommendation_id, user_id, product_id, 0.7, 0.8, 0.2, 0.1, 0.4, "Good fit", 1, iso_now(), "recommendations-v2"),
+    )
+    feedback_nudge(conn, user_id, recommendation_id, "like")
+    user = dict(conn.execute("select * from users where user_id = ?", (user_id,)).fetchone())
+
+    api_main.recommendation_response(conn, user, 1, refresh=True)
+
+    assert conn.execute("select count(*) from feedback where user_id = ?", (user_id,)).fetchone()[0] == 1
+
+
 def test_leiden_determinism() -> None:
     conn = make_conn()
     user_ids = [insert_user(conn, name=f"User {i}", email=f"user{i}@example.com", behavior={"Electronics": 0.9, "Fashion": 0.1}, onboarding=["Electronics"]) for i in range(4)]
