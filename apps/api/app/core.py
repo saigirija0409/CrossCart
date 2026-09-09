@@ -603,7 +603,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             description text,
             avg_rating real,
             review_count integer default 0,
-            source_platform text not null check (source_platform in ('amazon','flipkart','myntra','ajio')),
+            source_platform text not null check (source_platform in ('amazon','flipkart','myntra','ajio','tatacliq','nykaa')),
             embedding text not null,
             attributes text,
             last_updated text not null
