@@ -37,7 +37,10 @@ if (-not $python) {
 }
 
 # Check Node/npm
-$npm = Get-Command npm -ErrorAction SilentlyContinue
+$npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+if (-not $npm) {
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+}
 if (-not $npm) {
     Write-Error "Node.js / npm is required. Please install Node.js."
     exit 1
@@ -57,7 +60,7 @@ if (-not (Test-Path $venvPython)) {
 & $venvPython -m pip install --quiet -r apps/api/requirements.txt
 
 Write-Host "==> node dependencies"
-npm --prefix apps/web install --silent --no-fund --no-audit
+& $npm.Source --prefix apps/web install --silent --no-fund --no-audit
 
 # Free ports
 foreach ($port in @($API_PORT, $WEB_PORT)) {
@@ -74,7 +77,7 @@ $apiLog = Join-Path $logDir "crosscart-api.log"
 $webLog = Join-Path $logDir "crosscart-web.log"
 
 Write-Host "==> starting api on :$API_PORT"
-$apiProcess = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn apps.api.app.main:app --port $API_PORT --app-dir ." -RedirectStandardOutput $apiLog -RedirectStandardError $apiLog -PassThru -NoNewWindow
+$apiProcess = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn apps.api.app.main:app --port $API_PORT --app-dir ." -RedirectStandardOutput $apiLog -RedirectStandardError $apiLog -PassThru -WindowStyle Hidden
 
 # Wait for health check
 $ready = $false
@@ -100,7 +103,7 @@ if ($SEED_FLAG) {
 }
 
 Write-Host "==> starting web on :$WEB_PORT"
-$webProcess = Start-Process -FilePath "npm" -ArgumentList "--prefix apps/web run dev -- --port $WEB_PORT --strictPort" -RedirectStandardOutput $webLog -RedirectStandardError $webLog -PassThru -NoNewWindow
+$webProcess = Start-Process -FilePath $npm.Source -ArgumentList "--prefix apps/web run dev -- --port $WEB_PORT --strictPort" -RedirectStandardOutput $webLog -RedirectStandardError $webLog -PassThru -WindowStyle Hidden
 
 Write-Host @"
 
