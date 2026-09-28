@@ -52,22 +52,18 @@ prebuilt `igraph`/`leidenalg` wheels, pip compiles them, which adds a few
 minutes more.
 
 <details>
-<summary>Windows (PowerShell)</summary>
+<summary>Windows (PowerShell / Git Bash)</summary>
 
+In PowerShell:
 ```powershell
-git clone https://github.com/saigirija0409/CrossCart.git
-cd CrossCart
-python -m venv .venv
-.venv\Scripts\pip install -r apps\api\requirements.txt
-.venv\Scripts\python -m uvicorn apps.api.app.main:app --port 8000 --app-dir .
+.\run.ps1
+# Options: .\run.ps1 -seed   or   .\run.ps1 -fresh
 ```
 
-Then, in a second terminal:
-
-```powershell
-.venv\Scripts\python scripts\demo_seed.py
-npm --prefix apps\web install
-npm --prefix apps\web run dev
+In Git Bash / WSL:
+```bash
+./run.sh
+# Options: ./run.sh --seed   or   ./run.sh --fresh
 ```
 
 </details>

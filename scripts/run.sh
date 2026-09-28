@@ -26,43 +26,91 @@ done
 # wishlist should be seeded too — otherwise the first screen is empty.
 [ -f data/app.db ] || SEED=1
 
-command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
-command -v npm     >/dev/null || { echo "node/npm is required (https://nodejs.org)"; exit 1; }
+# Resolve Python command across Windows and Unix platforms
+PYTHON_CMD=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_CMD="python3"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_CMD="python"
+elif command -v py >/dev/null 2>&1; then
+  PYTHON_CMD="py"
+else
+  echo "python (or python3) is required (https://www.python.org/)" >&2
+  exit 1
+fi
+
+command -v npm >/dev/null 2>&1 || { echo "node/npm is required (https://nodejs.org)" >&2; exit 1; }
 
 echo "==> python dependencies"
-[ -d .venv ] || python3 -m venv .venv
-./.venv/bin/python -m pip install --quiet --upgrade pip
-./.venv/bin/python -m pip install --quiet -r apps/api/requirements.txt
+if [ ! -d .venv ]; then
+  "$PYTHON_CMD" -m venv .venv
+fi
+
+# Detect virtual environment python path (.venv/Scripts on Windows, .venv/bin on Unix)
+VENV_PY=""
+if [ -f ".venv/Scripts/python.exe" ]; then
+  VENV_PY=".venv/Scripts/python.exe"
+elif [ -f ".venv/Scripts/python" ]; then
+  VENV_PY=".venv/Scripts/python"
+elif [ -f ".venv/bin/python" ]; then
+  VENV_PY=".venv/bin/python"
+else
+  echo "Could not find python executable in .venv" >&2
+  exit 1
+fi
+
+"$VENV_PY" -m pip install --quiet --upgrade pip
+"$VENV_PY" -m pip install --quiet -r apps/api/requirements.txt
 
 echo "==> node dependencies"
 npm --prefix apps/web install --silent --no-fund --no-audit
 
-# Anything still holding the ports would make the URLs below point at the
-# wrong process, so clear them first.
+# Clear occupied ports (lsof on Unix, netstat on Windows)
 for port in "$API_PORT" "$WEB_PORT"; do
-  lsof -ti tcp:"$port" 2>/dev/null | xargs -r kill 2>/dev/null || true
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -ti tcp:"$port" 2>/dev/null | xargs -r kill 2>/dev/null || true
+  elif command -v netstat >/dev/null 2>&1; then
+    pids=$(netstat -ano 2>/dev/null | grep ":$port " | awk '{print $5}' | sort -u || true)
+    for pid in $pids; do
+      if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+        taskkill //F //PID "$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+      fi
+    done
+  fi
 done
 
 cleanup() { kill ${API_PID:-} ${WEB_PID:-} 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
+# Determine log file location across OSes
+LOG_DIR="${TMPDIR:-${TMP:-${TEMP:-/tmp}}}"
+LOG_DIR="${LOG_DIR%/}"
+[ -d "$LOG_DIR" ] || LOG_DIR="."
+
+API_LOG="$LOG_DIR/crosscart-api.log"
+WEB_LOG="$LOG_DIR/crosscart-web.log"
+
 echo "==> starting api on :$API_PORT"
-./.venv/bin/python -m uvicorn apps.api.app.main:app --port "$API_PORT" --app-dir . >/tmp/crosscart-api.log 2>&1 &
+"$VENV_PY" -m uvicorn apps.api.app.main:app --port "$API_PORT" --app-dir . > "$API_LOG" 2>&1 &
 API_PID=$!
 
 for _ in $(seq 1 60); do
-  curl -sf "http://localhost:$API_PORT/api/health" >/dev/null && break
-  kill -0 "$API_PID" 2>/dev/null || { echo "api failed to start:"; tail -20 /tmp/crosscart-api.log; exit 1; }
+  if command -v curl >/dev/null 2>&1; then
+    curl -sf "http://localhost:$API_PORT/api/health" >/dev/null 2>&1 && break
+  else
+    "$VENV_PY" -c "import urllib.request; urllib.request.urlopen('http://localhost:$API_PORT/api/health')" >/dev/null 2>&1 && break
+  fi
+  kill -0 "$API_PID" 2>/dev/null || { echo "api failed to start:"; tail -20 "$API_LOG"; exit 1; }
   sleep 1
 done
 
 if [ "$SEED" = "1" ]; then
   echo "==> seeding the demo wishlist"
-  ./.venv/bin/python scripts/demo_seed.py "http://localhost:$API_PORT"
+  "$VENV_PY" scripts/demo_seed.py "http://localhost:$API_PORT"
 fi
 
 echo "==> starting web on :$WEB_PORT"
-npm --prefix apps/web run dev -- --port "$WEB_PORT" --strictPort >/tmp/crosscart-web.log 2>&1 &
+npm --prefix apps/web run dev -- --port "$WEB_PORT" --strictPort > "$WEB_LOG" 2>&1 &
 WEB_PID=$!
 sleep 3
 
@@ -72,7 +120,7 @@ cat <<INFO
 
     app     http://localhost:$WEB_PORT
     api     http://localhost:$API_PORT/docs
-    logs    /tmp/crosscart-api.log  /tmp/crosscart-web.log
+    logs    $API_LOG  $WEB_LOG
 
     demo    demo@wishlist.local  / Demo1234!
     admin   admin@wishlist.local / Admin1234!
@@ -85,3 +133,4 @@ cat <<INFO
 INFO
 
 wait
+

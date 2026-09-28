@@ -8,3 +8,6 @@ data/app.db
 data/*.sqlite
 *.db
 *.log
+.venv/
+CrossCart/
+
