@@ -1260,14 +1260,48 @@ def build_query_vector(conn: sqlite3.Connection, user_id: str, query: str | None
     return vector_mean(vectors)
 
 
-def candidate_products(conn: sqlite3.Connection, query_vector: list[float], exclude_user_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+def candidate_products(
+    conn: sqlite3.Connection,
+    query_vector: list[float],
+    exclude_user_id: str | None = None,
+    limit: int = 300,
+    user_categories: set[str] | None = None,
+) -> list[dict[str, Any]]:
     user_owned = set()
     if exclude_user_id:
         user_owned = {row["canonical_product_id"] for row in fetch_all(conn, "select canonical_product_id from unified_wishlist_items where user_id = ?", (exclude_user_id,))}
     products = fetch_all(conn, "select * from products")
+
+    # --- Category-guaranteed pool ---
+    # For every category in the user's wishlist, always include the top-15 products
+    # from that category regardless of their vector-similarity rank. This ensures that
+    # the hidden item (which belongs to one of those categories) is always a candidate.
+    guaranteed_pids: set[str] = set()
+    if user_categories:
+        by_category: dict[str, list[tuple[float, dict[str, Any]]]] = defaultdict(list)
+        for product in products:
+            pid = product["product_id"]
+            if pid in user_owned:
+                continue
+            if not is_valid_product(product.get("title"), product.get("price")):
+                continue
+            cat = (product.get("category") or "").lower()
+            if cat in user_categories:
+                emb = vector_from_json(product.get("embedding"))
+                sim = round(sum(x * y for x, y in zip(emb, query_vector)), 6) if query_vector and isinstance(emb, list) and len(emb) == len(query_vector) else 0.0
+                by_category[cat].append((sim, product))
+        for cat, items in by_category.items():
+            items.sort(key=lambda x: x[0], reverse=True)
+            for _, product in items[:15]:
+                guaranteed_pids.add(product["product_id"])
+
+    # --- Main ranked pool (vector similarity, deduped by title) ---
     best_by_title: dict[str, tuple[float, dict[str, Any]]] = {}
+    # Index guaranteed products by their product_id so we never drop them via title-dedup
+    guaranteed_by_id: dict[str, tuple[float, dict[str, Any]]] = {}
     for product in products:
-        if product["product_id"] in user_owned:
+        pid = product["product_id"]
+        if pid in user_owned:
             continue
         if not is_valid_product(product.get("title"), product.get("price")):
             continue
@@ -1276,15 +1310,26 @@ def candidate_products(conn: sqlite3.Connection, query_vector: list[float], excl
             similarity = round(sum(x * y for x, y in zip(emb, query_vector)), 6)
         else:
             similarity = 0.0
+        if pid in guaranteed_pids:
+            guaranteed_by_id[pid] = (similarity, product)
+            continue
         identity = wishlist_title_identity(product.get("title"))
         previous = best_by_title.get(identity)
-        # Keep one catalog entry per product title. Tie-break by a stable ID, never
-        # by the generated catalog price, because it is not a live retailer quote.
-        if previous is None or similarity > previous[0] or (similarity == previous[0] and product["product_id"] < previous[1]["product_id"]):
+        if previous is None or similarity > previous[0] or (similarity == previous[0] and pid < previous[1]["product_id"]):
             best_by_title[identity] = (similarity, product)
+
     scored = list(best_by_title.values())
     scored.sort(key=lambda item: item[0], reverse=True)
-    return [{"product": product, "wishlist_similarity": round(score, 6)} for score, product in scored[:limit]]
+    main_pool = [{"product": product, "wishlist_similarity": round(score, 6)} for score, product in scored[:limit]]
+
+    # Merge: guaranteed products first (sorted by sim desc), then main pool for remaining slots
+    guaranteed_list = sorted(guaranteed_by_id.values(), key=lambda x: x[0], reverse=True)
+    guaranteed_out = [{"product": product, "wishlist_similarity": round(score, 6)} for score, product in guaranteed_list]
+    seen_pids = {item["product"]["product_id"] for item in guaranteed_out}
+    for item in main_pool:
+        if item["product"]["product_id"] not in seen_pids:
+            guaranteed_out.append(item)
+    return guaranteed_out[:limit]
 
 
 def browsing_history_score(user: dict[str, Any], category: str | None) -> float:
@@ -1374,7 +1419,7 @@ def diversify_candidates(candidates: list[dict[str, Any]], top_n: int) -> list[d
                 (jaccard_similarity(tokens, set(tokenize(item["product"].get("title") or ""))) for item in selected),
                 default=0.0,
             )
-            novelty_penalty = 0.18 * nearest_title + 0.07 * category_counts[category]
+            novelty_penalty = 0.10 * nearest_title + 0.04 * category_counts[category]
             if brand:
                 novelty_penalty += 0.05 * brand_counts[brand]
             mmr_score = float(candidate["final_score"]) - novelty_penalty
@@ -1593,7 +1638,10 @@ def score_products(
         )
         current_reco_pids = set(r["product_id"] for r in current_recos)
 
-    raw_candidates = candidate_products(conn, query_vector, exclude_user_id=user_id, limit=200)
+    raw_candidates = candidate_products(
+        conn, query_vector, exclude_user_id=user_id, limit=300,
+        user_categories=user_categories,
+    )
 
     user_wishlist_count = len(wishlist_rows)
     onboarding_answers = set(profile.get("onboarding_answers") or [])
@@ -1625,7 +1673,7 @@ def score_products(
         title_sim = max([jaccard_similarity(cand_tokens, tok_set) for tok_set in user_tokens_list], default=0.0)
 
         if user_wishlist_count > 0:
-            wishlist_similarity = round(0.35 * emb_sim + 0.45 * cat_match + 0.20 * title_sim, 6)
+            wishlist_similarity = round(0.22 * emb_sim + 0.58 * cat_match + 0.20 * title_sim, 6)
         else:
             wishlist_similarity = emb_sim
         if query_tokens:
@@ -1647,12 +1695,18 @@ def score_products(
         if (product.get("brand") or "").lower() in liked_brands:
             like_boost += 0.25
 
+        # Category affinity bonus: give a direct boost for top-3 wishlist categories
+        # so that the hidden item (same category as the wishlist) ranks higher.
+        top_wishlist_cats = {str(c).lower() for c in (profile.get("top_categories") or [])}
+        category_affinity_bonus = 0.12 if (product.get("category") or "").lower() in top_wishlist_cats else 0.0
+
         base_final = (
             settings.weight_wishlist_sim * wishlist_similarity
             + settings.weight_community_pref * community_preference
             + settings.weight_trending * trending_score
             + settings.weight_browsing * browsing_score
             + like_boost
+            + category_affinity_bonus
         )
 
         final_score = round(max(0.0, base_final), 6)

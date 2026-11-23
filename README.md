@@ -17,14 +17,24 @@ your community, and what is trending.
 
 ## Quick start
 
-Everything below is one command. It installs dependencies, starts both servers,
-seeds a demo wishlist across all six stores, and prints the URLs and logins.
+One command installs dependencies, starts both servers, seeds a demo wishlist
+across all six stores, and prints the URLs and logins.
 
-```bash
-git clone https://github.com/saigirija0409/CrossCart.git
-cd CrossCart
-./scripts/run.sh
+### Windows (PowerShell) — recommended
+
+Open **PowerShell** in the project root and run:
+
+```powershell
+.\run.ps1
 ```
+
+That's it. The script will:
+1. Create a `.venv` Python virtual environment (first run only)
+2. Install all Python (`pip`) and Node (`npm`) dependencies
+3. Start the FastAPI backend on **http://localhost:8000**
+4. Wait for the API to pass its health check
+5. Seed the demo wishlist (first run, or when using `-seed`)
+6. Start the Vite frontend on **http://localhost:5173**
 
 Then open **http://localhost:5173** and sign in:
 
@@ -33,40 +43,30 @@ Then open **http://localhost:5173** and sign in:
 | Demo  | `demo@wishlist.local`   | `Demo1234!`  |
 | Admin | `admin@wishlist.local`  | `Admin1234!` |
 
-`Ctrl-C` stops both servers.
+Press **Ctrl-C** (or close the terminal) to stop both servers.
+
+**Options:**
+
+```powershell
+.\run.ps1 -seed    # re-seed the demo wishlist over an existing database
+.\run.ps1 -fresh   # delete the local database and rebuild from scratch
+```
 
 **Requirements:** Python 3.11+ and Node 18+. Nothing else — no Docker, no
 database server, no API keys.
 
-**Options:**
-
-```bash
-./scripts/run.sh --seed     # re-seed the demo wishlist over an existing database
-./scripts/run.sh --fresh    # delete the local database and rebuild from scratch
-```
-
 First run takes a couple of minutes — pip and npm pull their dependencies, and
-the backend generates its 1500-product catalog and 80-user similarity graph
-before it starts serving. Later runs come up in seconds. On platforms without
-prebuilt `igraph`/`leidenalg` wheels, pip compiles them, which adds a few
-minutes more.
+the backend generates its 1500-product catalog and 80-user similarity graph.
+Later runs come up in seconds.
 
-<details>
-<summary>Windows (PowerShell / Git Bash)</summary>
+### macOS / Linux (Bash)
 
-In PowerShell:
-```powershell
-.\run.ps1
-# Options: .\run.ps1 -seed   or   .\run.ps1 -fresh
-```
-
-In Git Bash / WSL:
 ```bash
-./run.sh
-# Options: ./run.sh --seed   or   ./run.sh --fresh
+git clone https://github.com/saigirija0409/CrossCart.git
+cd CrossCart
+./scripts/run.sh
+# Options: ./scripts/run.sh --seed   or   ./scripts/run.sh --fresh
 ```
-
-</details>
 
 ---
 
@@ -142,7 +142,8 @@ apps/api          FastAPI backend (app/main.py routes, app/core.py logic)
 apps/web          React + Vite frontend
 apps/web/public/brands   store and product-brand logos, served locally
 apps/extension    Chrome MV3 extension (content scripts per store)
-scripts/run.sh    one-command bootstrap
+scripts/run.ps1   one-command bootstrap for Windows (PowerShell)
+scripts/run.sh    one-command bootstrap for macOS/Linux
 scripts/demo_seed.py     pushes the demo wishlist through the public sync API
 data              personas.json and the local SQLite database
 tests             backend tests

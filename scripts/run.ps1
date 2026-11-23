@@ -77,7 +77,7 @@ $apiLog = Join-Path $logDir "crosscart-api.log"
 $webLog = Join-Path $logDir "crosscart-web.log"
 
 Write-Host "==> starting api on :$API_PORT"
-$apiProcess = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn apps.api.app.main:app --port $API_PORT --app-dir ." -RedirectStandardOutput $apiLog -RedirectStandardError $apiLog -PassThru -WindowStyle Hidden
+$apiProcess = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn apps.api.app.main:app --port $API_PORT --app-dir ." -RedirectStandardOutput $apiLog -RedirectStandardError "$apiLog.err" -PassThru -WindowStyle Hidden
 
 # Wait for health check
 $ready = $false
@@ -103,7 +103,7 @@ if ($SEED_FLAG) {
 }
 
 Write-Host "==> starting web on :$WEB_PORT"
-$webProcess = Start-Process -FilePath $npm.Source -ArgumentList "--prefix apps/web run dev -- --port $WEB_PORT --strictPort" -RedirectStandardOutput $webLog -RedirectStandardError $webLog -PassThru -WindowStyle Hidden
+$webProcess = Start-Process -FilePath $npm.Source -ArgumentList "--prefix apps/web run dev -- --port $WEB_PORT --strictPort" -RedirectStandardOutput $webLog -RedirectStandardError "$webLog.err" -PassThru -WindowStyle Hidden
 
 Write-Host @"
 

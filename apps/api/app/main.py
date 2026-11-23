@@ -11,10 +11,11 @@ from typing import Any, Callable
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 
-from .config import settings
+from .config import WEB_DIST_DIR, settings
 from .core import (
     CATEGORY_TAXONOMY,
     add_raw_items,
@@ -689,3 +690,17 @@ async def rebuild_graph_now(user=Depends(require_admin)) -> dict[str, Any]:
 @app.exception_handler(HTTPException)
 def http_exception_handler(_, exc: HTTPException):
     return json_error("HTTP_ERROR", str(exc.detail), exc.status_code)
+
+
+if WEB_DIST_DIR.exists() and (WEB_DIST_DIR / "index.html").exists():
+    if (WEB_DIST_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(WEB_DIST_DIR / "assets")), name="assets")
+    if (WEB_DIST_DIR / "brands").exists():
+        app.mount("/brands", StaticFiles(directory=str(WEB_DIST_DIR / "brands")), name="brands")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = WEB_DIST_DIR / full_path
+        if full_path and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(WEB_DIST_DIR / "index.html")

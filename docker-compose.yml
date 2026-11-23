@@ -1,0 +1,12 @@
+services:
+  crosscart:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crosscart
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - SECRET_KEY=demo-secret-key-change-in-prod
+    restart: unless-stopped
