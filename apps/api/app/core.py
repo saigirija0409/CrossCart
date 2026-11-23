@@ -871,6 +871,7 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
 
         if item_price is not None and item_price <= 0:
             item_price = None
+        item_category = map_category(item.get("category") or item_title)
         item_url = item_payload.get("url") if isinstance(item_payload, dict) else None
         if not item_url and str(item.get("platform_product_id") or "").startswith(("http://", "https://")):
             item_url = item.get("platform_product_id")
