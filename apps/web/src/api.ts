@@ -19,6 +19,10 @@ export type WishlistItem = {
   platform?: string;
   url?: string;
   brand?: string | null;
+  store_prices?: Record<string, number>;
+  cheapest_platform?: string;
+  highest_price?: number;
+  savings?: number;
 };
 
 export type PlatformConnection = {

@@ -361,7 +361,33 @@ def get_wishlist(user=Depends(require_user), conn=Depends(db)) -> dict[str, Any]
         """,
         (user["user_id"],),
     )
-    return {"items": items, "count": len(items)}
+    enriched = []
+    for item in items:
+        data = dict(item)
+        sp = data.get("store_prices")
+        if isinstance(sp, str):
+            sp = json_maybe_load(sp, {})
+        if not isinstance(sp, dict):
+            sp = {}
+        data["store_prices"] = sp
+        if sp and len(sp) > 1:
+            valid_items = {k: v for k, v in sp.items() if isinstance(v, (int, float)) and v > 0}
+            if valid_items:
+                cheapest_store = min(valid_items, key=lambda k: valid_items[k])
+                lowest_p = valid_items[cheapest_store]
+                highest_p = max(valid_items.values())
+                data["cheapest_platform"] = cheapest_store
+                data["highest_price"] = highest_p
+                data["savings"] = round(highest_p - lowest_p, 2) if highest_p > lowest_p else 0
+                data["price"] = lowest_p
+        elif sp and len(sp) == 1:
+            single_store = next(iter(sp))
+            data["cheapest_platform"] = single_store
+            data["highest_price"] = sp[single_store]
+            data["savings"] = 0
+            data["price"] = sp[single_store]
+        enriched.append(data)
+    return {"items": enriched, "count": len(enriched)}
 
 
 @app.post("/api/wishlist/items")

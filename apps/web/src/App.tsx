@@ -1109,15 +1109,50 @@ function App() {
                               {itemPlatforms(item).map((source, index) => (
                                 <BrandChip key={`${source}-${index}`} platformKey={source} />
                               ))}
-                              {item.url && (
+                              {item.savings && item.savings > 0 && item.cheapest_platform ? (
+                                <span
+                                  className="chip"
+                                  style={{
+                                    background: "rgba(16, 185, 129, 0.15)",
+                                    color: "var(--success, #10b981)",
+                                    border: "1px solid rgba(16, 185, 129, 0.35)",
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Lowest on {platformInfo(item.cheapest_platform).name} • Save {formatPrice(item.savings)}
+                                </span>
+                              ) : null}
+                              {item.url ? (
                                 <a className="link-inline" href={item.url} target="_blank" rel="noopener noreferrer">
                                   View product <IconExternal />
                                 </a>
+                              ) : (
+                                item.cheapest_platform && (
+                                  <a
+                                    className="link-inline"
+                                    href={platformInfo(item.cheapest_platform).search(item.title)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Buy on {platformInfo(item.cheapest_platform).name} <IconExternal />
+                                  </a>
+                                )
                               )}
                             </div>
                           </div>
                           <div className="item-side">
-                            {item.price != null && <span className="price">{formatPrice(item.price)}</span>}
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                              {item.price != null && (
+                                <span className="price" style={item.savings && item.savings > 0 ? { color: "var(--success, #10b981)" } : undefined}>
+                                  {formatPrice(item.price)}
+                                </span>
+                              )}
+                              {item.savings != null && item.savings > 0 && item.highest_price != null ? (
+                                <span style={{ fontSize: "0.75rem", textDecoration: "line-through", opacity: 0.55, marginTop: "2px" }}>
+                                  {formatPrice(item.highest_price)}
+                                </span>
+                              ) : null}
+                            </div>
                             <button className="icon-btn" onClick={() => void removeItem(item.unified_item_id)} aria-label={`Remove ${item.title}`} title="Remove item">
                               <IconTrash size={16} />
                             </button>

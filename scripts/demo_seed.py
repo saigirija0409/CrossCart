@@ -54,6 +54,7 @@ WISHLISTS: dict[str, list[dict[str, object]]] = {
         {"title": "Skechers Go Walk Everyday Slides", "price": 2799, "category": "Footwear"},
     ],
     "tatacliq": [
+        {"title": "Tommy Hilfiger Men Black Patterned Dial Analogue Watch", "price": 13495, "category": "Wearables"},
         {"title": "Fossil Machine Chronograph Men Watch", "price": 12995, "category": "Wearables"},
         {"title": "Casio G-Shock GX-56BB Digital Watch", "price": 10995, "category": "Wearables"},
         {"title": "Ikea Malm Bedside Table", "price": 6990, "category": "Furniture"},

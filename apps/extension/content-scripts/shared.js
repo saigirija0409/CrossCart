@@ -192,18 +192,25 @@
 
   function parsePrice(value) {
     if (!value) return "";
-    const clean = cleanText(value);
-    const symbolMatch = clean.match(/(?:₹|Rs\.?|INR|\$)\s?[\d,]+(?:\.\d{1,2})?/i);
+    let clean = cleanText(value);
+    clean = clean.replace(/\b\d(?:\.\d+)?\s*(?:out\s+of\s*\d(?:\.\d+)?\s*)?stars?\b/gi, " ");
+    clean = clean.replace(/\b\d(?:\.\d+)?\s*\/\s*5\b/gi, " ");
+
+    const symbolMatch = clean.match(/(?:₹|\bRs\.?|\bINR|\$)\s?[\d,]+(?:\.\d{1,2})?/i);
     if (symbolMatch) {
-      return symbolMatch[0]
-        .replace(/(?:₹|Rs\.?|INR|\$)\s*/i, "")
+      const parsed = symbolMatch[0]
+        .replace(/(?:₹|\bRs\.?|\bINR|\$)\s*/i, "")
         .replace(/,/g, "");
+      const val = parseFloat(parsed);
+      if (val >= 15 && val < 5000000) {
+        return parsed;
+      }
     }
     const numberMatch = clean.match(/[\d,]+(?:\.\d{1,2})?/);
     if (numberMatch) {
       const numStr = numberMatch[0].replace(/,/g, "");
       const val = parseFloat(numStr);
-      if (val > 0 && val < 500000) {
+      if (val >= 15 && val < 5000000) {
         return val.toString();
       }
     }
@@ -287,7 +294,21 @@
       const title = getTitle(node);
       if (!title || isGarbageTitle(title)) continue;
       const text = cleanText(node.textContent || "");
-      const rawPrice = parsePrice(text);
+      let rawPrice = "";
+      if (platform === "amazon") {
+        const dataPrice = node.getAttribute("data-price") || node.querySelector("[data-price]")?.getAttribute("data-price");
+        if (dataPrice && parseFloat(dataPrice) >= 15) {
+          rawPrice = dataPrice;
+        } else {
+          const priceNode = node.querySelector("span[id^='itemPrice_'], .a-price .a-offscreen, .a-price, [data-a-color='price'], span.a-color-price");
+          if (priceNode) {
+            rawPrice = parsePrice(priceNode.textContent || "");
+          }
+        }
+      }
+      if (!rawPrice) {
+        rawPrice = parsePrice(text);
+      }
       const numericPrice = rawPrice ? parseFloat(rawPrice) : null;
 
       const productId = extractId(node);

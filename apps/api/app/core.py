@@ -364,9 +364,9 @@ def map_category(text: str | None) -> str:
         return "Personal Care"
     if any(w in raw for w in ["shirt", "pant", "jean", "dress", "top", "wear", "cloth", "belt", "cap", "glass", "shoe", "tshirt", "t-shirt", "jacket", "curtis", "saree", "heel", "sneaker", "boot", "trouser", "kurta"]):
         return "Fashion"
-    if any(w in raw for w in ["book", "guide", "paperback", "hardcover", "novel", "edition"]):
+    if any(w in raw for w in ["book", "guide", "paperback", "hardcover", "novel", "edition", "movie", "author", "story"]):
         return "Books"
-    if any(w in raw for w in ["phone", "laptop", "cable", "tech", "audio", "charge", "usb", "gadget", "screen", "earbud", "headphone", "monitor", "keyboard", "mouse"]):
+    if any(w in raw for w in ["ipad", "tablet", "apple m1", "phone", "laptop", "cable", "tech", "audio", "charge", "usb", "gadget", "screen", "earbud", "headphone", "monitor", "keyboard", "mouse", "case cover", "cover"]):
         return "Electronics"
 
     return "Fashion" if any(w in raw for w in ["men", "women", "kids", "fit", "style", "cotton"]) else "General"
@@ -753,6 +753,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     wishlist_columns = {row["name"] for row in conn.execute("pragma table_info(unified_wishlist_items)").fetchall()}
     if "source_url" not in wishlist_columns:
         conn.execute("alter table unified_wishlist_items add column source_url text")
+    if "store_prices" not in wishlist_columns:
+        conn.execute("alter table unified_wishlist_items add column store_prices text default '{}'")
     cleanup_non_products(conn)
 
 
@@ -848,10 +850,27 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
             continue
         raw_item_price = item.get("price")
         item_price = float(raw_item_price) if raw_item_price not in (None, "") else None
+        item_payload = json_maybe_load(item.get("raw_payload"), {})
+        if item_price is not None and item_price < 15.0:
+            extracted_p = None
+            if isinstance(item_payload, dict):
+                raw_inner = item_payload.get("raw_payload", {})
+                raw_text = raw_inner.get("text", "") if isinstance(raw_inner, dict) else ""
+                if not raw_text and isinstance(item_payload.get("text"), str):
+                    raw_text = item_payload["text"]
+                price_matches = re.findall(r"(?:₹|\brs\.?|\binr|\$)\s*([\d,]+(?:\.\d{1,2})?)", raw_text, re.IGNORECASE)
+                for pm in price_matches:
+                    try:
+                        val = float(pm.replace(",", ""))
+                        if val >= 15.0:
+                            extracted_p = val
+                            break
+                    except Exception:
+                        pass
+            item_price = extracted_p
+
         if item_price is not None and item_price <= 0:
             item_price = None
-        item_category = map_category(item.get("category") or item_title)
-        item_payload = json_maybe_load(item.get("raw_payload"), {})
         item_url = item_payload.get("url") if isinstance(item_payload, dict) else None
         if not item_url and str(item.get("platform_product_id") or "").startswith(("http://", "https://")):
             item_url = item.get("platform_product_id")
@@ -916,17 +935,33 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
         if existing:
             platforms = set(json_maybe_load(existing.get("source_platforms"), []))
             platforms.add(item["platform"])
+            store_prices = json_maybe_load(existing.get("store_prices"), {})
+            if not isinstance(store_prices, dict):
+                store_prices = {}
+            if item_price and item_price > 0:
+                store_prices[item["platform"]] = item_price
+            valid_prices = [p for p in store_prices.values() if isinstance(p, (int, float)) and p > 0]
+            cheapest_price = min(valid_prices) if valid_prices else (item_price or existing.get("price"))
+
             conn.execute(
-                "update unified_wishlist_items set canonical_product_id = ?, category = ?, title = ?, source_platforms = ?, price = coalesce(nullif(?, 0), price), source_url = coalesce(?, source_url) where unified_item_id = ?",
-                (canonical_id, item_category, item_title, json.dumps(sorted(platforms)), item_price, item_url, existing["unified_item_id"]),
+                "update unified_wishlist_items set canonical_product_id = ?, category = ?, title = ?, source_platforms = ?, store_prices = ?, price = ?, source_url = coalesce(?, source_url) where unified_item_id = ?",
+                (canonical_id, item_category, item_title, json.dumps(sorted(platforms)), json.dumps(store_prices), cheapest_price, item_url, existing["unified_item_id"]),
             )
+            existing["source_platforms"] = list(platforms)
+            existing["store_prices"] = store_prices
+            existing["price"] = cheapest_price
             merged += 1
         else:
+            store_prices = {}
+            if item_price and item_price > 0:
+                store_prices[item["platform"]] = item_price
+            initial_price = item_price if item_price is not None else (candidate_product["price"] if candidate_product else None)
+
             conn.execute(
                 """
                 insert into unified_wishlist_items (
-                    unified_item_id, user_id, canonical_product_id, title, category, price, source_url, source_platforms, added_at
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    unified_item_id, user_id, canonical_product_id, title, category, price, source_url, source_platforms, store_prices, added_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_item_id := new_id(),
@@ -934,9 +969,10 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
                     canonical_id,
                     item_title,
                     item_category,
-                    item_price if item_price is not None else (candidate_product["price"] if candidate_product else None),
+                    initial_price,
                     item_url,
                     json.dumps([item["platform"]]),
+                    json.dumps(store_prices),
                     iso_now(),
                 ),
             )
@@ -947,6 +983,8 @@ def preprocess_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any]:
                     "title": item_title,
                     "canonical_product_id": canonical_id,
                     "source_platforms": [item["platform"]],
+                    "store_prices": store_prices,
+                    "price": initial_price,
                 }
             )
         category_counter[item_category] += 1
