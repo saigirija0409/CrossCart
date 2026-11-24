@@ -20,7 +20,10 @@
     "http://localhost:5173/*",
     "http://localhost:5174/*",
     "http://127.0.0.1:5173/*",
-    "http://127.0.0.1:5174/*"
+    "http://127.0.0.1:5174/*",
+    "https://*.onrender.com/*",
+    "https://*.render.com/*",
+    "https://*.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -31,7 +34,10 @@
         "http://localhost:5173/*",
         "http://localhost:5174/*",
         "http://127.0.0.1:5173/*",
-        "http://127.0.0.1:5174/*"
+        "http://127.0.0.1:5174/*",
+        "https://*.onrender.com/*",
+        "https://*.render.com/*",
+        "https://*.vercel.app/*"
       ],
       "js": ["content-scripts/web-bridge.js"]
     },

@@ -25,10 +25,30 @@ function detectPlatform(url) {
   return { name: "unsupported", icon: "Unsupported site" };
 }
 
+const APP_URL_PATTERNS = [
+  "http://localhost:5173/*",
+  "http://localhost:5174/*",
+  "http://127.0.0.1:5173/*",
+  "http://127.0.0.1:5174/*",
+  "https://*.onrender.com/*",
+  "https://*.render.com/*",
+  "https://*.vercel.app/*"
+];
+
+function isCrossCartUrl(url) {
+  if (!url) return false;
+  return url.includes("localhost:517") ||
+    url.includes("127.0.0.1:517") ||
+    url.includes(".onrender.com") ||
+    url.includes(".render.com") ||
+    url.includes(".vercel.app");
+}
+
 async function getStoredAuth() {
-  // Always query active open CrossCart web tabs first to get live user token
+  // Always query active open CrossCart web tabs first to get live user token & API base
   try {
-    const appTabs = await chrome.tabs.query({ url: ["http://localhost:5173/*", "http://localhost:5174/*", "http://127.0.0.1:5173/*", "http://127.0.0.1:5174/*"] });
+    const allTabs = await chrome.tabs.query({}).catch(() => []);
+    const appTabs = allTabs.filter(tab => isCrossCartUrl(tab.url));
     for (const tab of appTabs) {
       if (tab.id) {
         const results = await chrome.scripting.executeScript({
@@ -36,6 +56,7 @@ async function getStoredAuth() {
           func: () => ({
             token: localStorage.getItem("wishlist_token"),
             user: localStorage.getItem("wishlist_user"),
+            origin: window.location.origin,
           }),
         }).catch(() => null);
 
@@ -45,8 +66,12 @@ async function getStoredAuth() {
           if (res.user) {
             try { userObj = JSON.parse(res.user); } catch (e) {}
           }
-          await chrome.storage.local.set({ authToken: res.token, user: userObj });
-          return { token: res.token, user: userObj };
+          const storageUpdate = { authToken: res.token, user: userObj };
+          if (res.origin) {
+            storageUpdate.apiBase = res.origin;
+          }
+          await chrome.storage.local.set(storageUpdate);
+          return { token: res.token, user: userObj, apiBase: res.origin };
         }
       }
     }
@@ -55,12 +80,12 @@ async function getStoredAuth() {
   }
 
   // Fallback to stored token if no active tab found
-  const data = await chrome.storage.local.get(["authToken", "user"]);
+  const data = await chrome.storage.local.get(["authToken", "user", "apiBase"]);
   if (data.authToken) {
-    return { token: data.authToken, user: data.user };
+    return { token: data.authToken, user: data.user, apiBase: data.apiBase };
   }
 
-  return { token: null, user: null };
+  return { token: null, user: null, apiBase: null };
 }
 
 async function init() {
@@ -76,7 +101,7 @@ async function init() {
     userBadgeEl.textContent = "Not logged in";
     userBadgeEl.style.background = "rgba(134, 168, 207, 0.15)";
     userBadgeEl.style.borderColor = "rgba(134, 168, 207, 0.35)";
-    statusEl.textContent = "Please open CrossCart at http://localhost:5173 and log in.";
+    statusEl.textContent = "Please open your CrossCart website and log in.";
     statusEl.className = "status error";
   }
 
@@ -101,7 +126,7 @@ syncBtn.addEventListener("click", async () => {
 
   const { token } = await getStoredAuth();
   if (!token) {
-    statusEl.textContent = "Please open the CrossCart web tab (http://localhost:5173) and log in first.";
+    statusEl.textContent = "Please open the CrossCart web tab and log in first.";
     statusEl.className = "status error";
     syncBtn.disabled = false;
     return;

@@ -1,4 +1,9 @@
-const API_BASE = "http://localhost:8000";
+const DEFAULT_API_BASE = "http://localhost:8000";
+
+async function getApiBase() {
+  const result = await chrome.storage.local.get(["apiBase"]);
+  return result.apiBase || DEFAULT_API_BASE;
+}
 
 async function getAuthToken() {
   const result = await chrome.storage.local.get(["authToken"]);
@@ -12,9 +17,10 @@ async function postSync(platform, items, tokenOverride = null) {
   }
 
   const cleanPlatform = (platform || "manual").toLowerCase();
+  const apiBase = await getApiBase();
 
   // 1. Sync the scraped wishlist items
-  const response = await fetch(`${API_BASE}/api/wishlist/sync`, {
+  const response = await fetch(`${apiBase}/api/wishlist/sync`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -29,7 +35,7 @@ async function postSync(platform, items, tokenOverride = null) {
 
   // 2. Register/update platform connection state in database
   try {
-    await fetch(`${API_BASE}/api/platforms/connect`, {
+    await fetch(`${apiBase}/api/platforms/connect`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -41,7 +47,17 @@ async function postSync(platform, items, tokenOverride = null) {
     console.warn("Auto platform connection register warning:", err);
   }
 
-  const appTabs = await chrome.tabs.query({ url: ["http://localhost:5173/*", "http://localhost:5174/*", "http://127.0.0.1:5173/*", "http://127.0.0.1:5174/*"] }).catch(() => []);
+  const appTabs = await chrome.tabs.query({
+    url: [
+      "http://localhost:5173/*",
+      "http://localhost:5174/*",
+      "http://127.0.0.1:5173/*",
+      "http://127.0.0.1:5174/*",
+      "https://*.onrender.com/*",
+      "https://*.render.com/*",
+      "https://*.vercel.app/*"
+    ]
+  }).catch(() => []);
   for (const tab of appTabs) {
     if (tab.id) {
       chrome.tabs.sendMessage(tab.id, { type: "WISHLIST_UPDATED" }).catch(() => {});
@@ -62,7 +78,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({ ok: false, error: `No wishlist items found on ${message.platform}.` });
   }
   if (message?.type === "SAVE_TOKEN") {
-    chrome.storage.local.set({ authToken: message.token, user: message.user }).then(() => sendResponse({ ok: true }));
+    const update = { authToken: message.token, user: message.user };
+    if (message.apiBase) {
+      update.apiBase = message.apiBase;
+    }
+    chrome.storage.local.set(update).then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message?.type === "CLEAR_TOKEN") {

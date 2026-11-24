@@ -9,6 +9,7 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "app.db"
 PERSONAS_PATH = DATA_DIR / "personas.json"
+EXTENSION_DIR = ROOT_DIR / "apps" / "extension"
 WEB_DIST_DIR = Path(os.getenv("WEB_DIST_DIR", str(ROOT_DIR / "apps" / "web" / "dist")))
 
 

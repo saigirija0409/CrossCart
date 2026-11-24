@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import io
 import json
+import os
+from pathlib import Path
 import re
 import time
+import zipfile
 from contextlib import contextmanager
 from typing import Any, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 
-from .config import WEB_DIST_DIR, settings
+from .config import EXTENSION_DIR, WEB_DIST_DIR, settings
 from .core import (
     CATEGORY_TAXONOMY,
     add_raw_items,
@@ -68,7 +72,7 @@ scheduler: AsyncIOScheduler | None = None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url, "http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*(\.onrender\.com|\.render\.com|\.vercel\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -320,6 +324,32 @@ def disconnect_platform(connection_id: str, user=Depends(require_user), conn=Dep
     conn.execute("delete from platform_connections where connection_id = ? and user_id = ?", (connection_id, user["user_id"]))
     conn.commit()
     return {"deleted": True}
+
+
+@app.get("/api/extension/download")
+def download_extension():
+    if not EXTENSION_DIR.exists() or not (EXTENSION_DIR / "manifest.json").exists():
+        raise HTTPException(status_code=404, detail="Extension files not found")
+
+    mem_zip = io.BytesIO()
+    with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(EXTENSION_DIR):
+            # Ignore tests or node_modules if any
+            dirs[:] = [d for d in dirs if d not in ["tests", "node_modules", ".git", "__pycache__"]]
+            for file in files:
+                file_path = Path(root) / file
+                archive_name = file_path.relative_to(EXTENSION_DIR)
+                zf.write(file_path, arcname=str(archive_name))
+
+    content = mem_zip.getvalue()
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="crosscart-extension.zip"',
+            "Cache-Control": "no-cache",
+        },
+    )
 
 
 @app.post("/api/wishlist/sync")

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { BRAND_LOGO_SLUGS } from "./brandLogos";
 import { api, type AuthUser, type PlatformConnection, type Recommendation, type WishlistItem } from "./api";
 import {
-  IconAlert, IconBox, IconCheck, IconClose, IconExternal, IconEyeOff, IconGrid, IconHeart, IconInfo,
+  IconAlert, IconBox, IconCheck, IconClose, IconDownload, IconExternal, IconEyeOff, IconGrid, IconHeart, IconInfo,
   IconLayers, IconLink, IconLogout, IconMenu, IconMoon, IconPlus, IconRefresh, IconSearch, IconShield,
   IconSparkles, IconStar, IconStore, IconSun, IconThumbUp, IconTrash, IconUpload, IconUsers,
 } from "./icons";
@@ -395,6 +395,7 @@ function App() {
   const [platformFilter, setPlatformFilter] = useState<string>("all");
 
   const [connectModal, setConnectModal] = useState<PlatformInfo | null>(null);
+  const [extensionModal, setExtensionModal] = useState(false);
   const [disconnectModal, setDisconnectModal] = useState<{ connection_id: string; platform: string } | null>(null);
   const [clearModal, setClearModal] = useState(false);
 
@@ -910,6 +911,15 @@ function App() {
             </div>
             <div className="topbar-actions">
               <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setExtensionModal(true)}
+                title="Download or manage browser extension"
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <IconDownload size={15} />
+                <span>Extension</span>
+              </button>
+              <button
                 className="icon-btn"
                 onClick={() => void loadDashboard()}
                 aria-label="Reload data"
@@ -945,6 +955,13 @@ function App() {
                       <h2>Connected platforms</h2>
                       <p>Sync each store once with the browser extension — CrossCart keeps the merged list up to date.</p>
                     </div>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setExtensionModal(true)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      <IconDownload size={14} /> Download Extension
+                    </button>
                   </div>
                   <div className="grid grid-cards">
                     {PLATFORM_OPTIONS.map((key) => {
@@ -1383,6 +1400,13 @@ function App() {
           onClose={() => setConnectModal(null)}
           footer={
             <>
+              <button
+                className="btn btn-ghost"
+                onClick={() => { setConnectModal(null); setExtensionModal(true); }}
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <IconDownload size={15} /> Install extension
+              </button>
               <a className="btn btn-secondary" href={connectModal.url} target="_blank" rel="noopener noreferrer">
                 Open {connectModal.name} <IconExternal />
               </a>
@@ -1400,6 +1424,54 @@ function App() {
                 </div>
               </div>
             ))}
+          </div>
+        </Modal>
+      )}
+
+      {extensionModal && (
+        <Modal
+          title="Download CrossCart Browser Extension"
+          subtitle="Sync wishlists from Amazon, Flipkart, Myntra, Ajio, Tata CLiQ & Nykaa"
+          badge={<div className="brand-mark" style={{ width: 44, height: 44 }}><IconLayers size={22} /></div>}
+          onClose={() => setExtensionModal(false)}
+          footer={
+            <>
+              <a className="btn btn-primary" href="/api/extension/download" download="crosscart-extension.zip" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <IconDownload size={16} /> Download ZIP
+              </a>
+              <button className="btn btn-secondary" onClick={() => setExtensionModal(false)}>Close</button>
+            </>
+          }
+        >
+          <div className="steps">
+            <div className="step first">
+              <div className="step-num">1</div>
+              <div>
+                <div className="step-title">Download and extract the ZIP file</div>
+                <div className="step-desc">Click the button below to download <code>crosscart-extension.zip</code>, then extract it to a folder on your computer.</div>
+              </div>
+            </div>
+            <div className="step">
+              <div className="step-num">2</div>
+              <div>
+                <div className="step-title">Open Chrome / Edge Extensions</div>
+                <div className="step-desc">Navigate to <code>chrome://extensions</code> (or <code>edge://extensions</code>) and turn on <strong>Developer mode</strong> in the top-right corner.</div>
+              </div>
+            </div>
+            <div className="step">
+              <div className="step-num">3</div>
+              <div>
+                <div className="step-title">Click 'Load unpacked'</div>
+                <div className="step-desc">Select the extracted extension folder. If you previously had an older version installed, click Remove or Reload on it.</div>
+              </div>
+            </div>
+            <div className="step">
+              <div className="step-num">4</div>
+              <div>
+                <div className="step-title">Keep CrossCart open and sync!</div>
+                <div className="step-desc">The updated extension automatically connects to your live CrossCart web session on Render or local. Open any store wishlist and click <strong>Sync Current Tab</strong>.</div>
+              </div>
+            </div>
           </div>
         </Modal>
       )}

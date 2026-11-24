@@ -1,4 +1,8 @@
 (() => {
+  function getOriginApiBase() {
+    return window.location.origin;
+  }
+
   function syncTokenFromPage() {
     try {
       const token = localStorage.getItem("wishlist_token");
@@ -8,7 +12,8 @@
         try { user = JSON.parse(userRaw); } catch (e) {}
       }
       if (token) {
-        chrome.runtime.sendMessage({ type: "SAVE_TOKEN", token, user }).catch(() => {});
+        const apiBase = getOriginApiBase();
+        chrome.runtime.sendMessage({ type: "SAVE_TOKEN", token, user, apiBase }).catch(() => {});
       }
     } catch (e) {}
   }
@@ -20,8 +25,9 @@
   window.addEventListener("message", (event) => {
     if (event.data?.type === "CROSSCART_SET_TOKEN") {
       const { token, user } = event.data;
+      const apiBase = event.data.apiBase || getOriginApiBase();
       if (token) {
-        chrome.runtime.sendMessage({ type: "SAVE_TOKEN", token, user }).catch(() => {});
+        chrome.runtime.sendMessage({ type: "SAVE_TOKEN", token, user, apiBase }).catch(() => {});
       }
     } else if (event.data?.type === "CROSSCART_CLEAR_TOKEN") {
       chrome.runtime.sendMessage({ type: "CLEAR_TOKEN" }).catch(() => {});
